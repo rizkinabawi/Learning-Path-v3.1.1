@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
@@ -16,6 +17,11 @@ import { Feather } from "@expo/vector-icons";
 import { generatePrompt, PROMPT_TEMPLATES, LANGUAGE_OPTIONS, PromptTemplate } from "@/utils/prompt-templates";
 import { shareJson, copyJsonToClipboard, type LearningJsonOutput } from "@/utils/json-export";
 import { exportAsZip } from "@/utils/zip-handler";
+import {
+  getLearningPaths, getModules, getLessons, saveFlashcard, saveQuiz, generateId,
+  STANDALONE_LESSON_ID,
+  type LearningPath, type Module, type Lesson,
+} from "@/utils/storage";
 import Colors, { shadow, shadowSm } from "@/constants/colors";
 import { toast } from "@/components/Toast";
 import { isCancellationError } from "@/utils/safe-share";
@@ -129,6 +135,44 @@ function SectionLabel({ text }: { text: string }) {
   return <Text style={styles.sectionLabel}>{text}</Text>;
 }
 
+// ─── Cascade Picker ──────────────────────────────────────────────
+function PickerSheet<T extends { id: string }>({
+  title, items, getLabel, getSub, onSelect, onClose, onBack,
+}: {
+  title: string; items: T[]; getLabel: (item: T) => string; getSub: (item: T) => string;
+  onSelect: (item: T) => void; onClose: () => void; onBack?: () => void;
+}) {
+  return (
+    <View style={ps.overlay}>
+      <View style={ps.sheet}>
+        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: "center", marginTop: 12, marginBottom: 4 }} />
+        <View style={ps.header}>
+          {onBack
+            ? <TouchableOpacity style={ps.iconBtn} onPress={onBack}><Feather name="arrow-left" size={18} color={Colors.dark} /></TouchableOpacity>
+            : <View style={{ width: 34 }} />}
+          <Text style={ps.title} numberOfLines={1}>{title}</Text>
+          <TouchableOpacity style={ps.iconBtn} onPress={onClose}><Feather name="x" size={18} color={Colors.dark} /></TouchableOpacity>
+        </View>
+        {items.length === 0
+          ? <View style={ps.empty}><Feather name="inbox" size={32} color={Colors.textMuted} /><Text style={ps.emptyText}>Tidak ada data</Text></View>
+          : (
+            <ScrollView contentContainerStyle={ps.list}>
+              {items.map((item) => (
+                <TouchableOpacity key={item.id} style={ps.item} onPress={() => onSelect(item)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={ps.itemLabel}>{getLabel(item)}</Text>
+                    {getSub(item) ? <Text style={ps.itemSub} numberOfLines={1}>{getSub(item)}</Text> : null}
+                  </View>
+                  <Feather name="chevron-right" size={16} color={Colors.textMuted} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+      </View>
+    </View>
+  );
+}
+
 type Tab = "builder" | "share";
 
 export const PromptBuilder = () => {
@@ -141,10 +185,35 @@ export const PromptBuilder = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
   const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   const [sampleJson, setSampleJson] = useState<LearningJsonOutput | null>(null);
   const [importedJson, setImportedJson] = useState<LearningJsonOutput | null>(null);
   const [jsonInput, setJsonInput] = useState("");
+
+  // Save/assign state
+  const [saving, setSaving] = useState(false);
+  const [courses, setCourses] = useState<LearningPath[]>([]);
+  const [modules, setModules] = useState<Module[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [selCourse, setSelCourse] = useState<LearningPath | null>(null);
+  const [selModule, setSelModule] = useState<Module | null>(null);
+  const [selLesson, setSelLesson] = useState<Lesson | null>(null);
+  const [pickerStep, setPickerStep] = useState<"course" | "module" | "lesson" | null>(null);
+
+  useEffect(() => {
+    getLearningPaths().then(setCourses);
+  }, []);
+
+  useEffect(() => {
+    if (!selCourse) { setModules([]); setLessons([]); return; }
+    getModules(selCourse.id).then((m) => setModules(m.sort((a, b) => a.order - b.order)));
+  }, [selCourse]);
+
+  useEffect(() => {
+    if (!selModule) { setLessons([]); return; }
+    getLessons(selModule.id).then((l) => setLessons(l.sort((a, b) => a.order - b.order)));
+  }, [selModule]);
 
   const filteredTemplates = PROMPT_TEMPLATES.filter((t) => t.type === outputType);
   const diffOption = DIFFICULTY_OPTIONS.find((d) => d.id === difficulty)!;
@@ -211,12 +280,15 @@ export const PromptBuilder = () => {
   };
 
   const handleSharePrompt = async () => {
-    if (!generatedPrompt) return;
+    if (!generatedPrompt || isSharing) return;
+    setIsSharing(true);
     try {
       const { Share } = await import("react-native");
       await Share.share({ message: generatedPrompt });
     } catch (e) {
       if (!isCancellationError(e)) toast.error("Gagal membagikan prompt");
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -227,12 +299,15 @@ export const PromptBuilder = () => {
   };
 
   const handleShareJson = async () => {
-    if (!sampleJson) return;
+    if (!sampleJson || isSharing) return;
+    setIsSharing(true);
     try {
       await shareJson(sampleJson);
       toast.success("JSON berhasil dibagikan!");
-    } catch {
-      toast.error("Gagal membagikan JSON");
+    } catch (e) {
+      if (!isCancellationError(e)) toast.error("Gagal membagikan JSON");
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -243,6 +318,57 @@ export const PromptBuilder = () => {
       toast.success("ZIP berhasil diekspor!");
     } catch {
       toast.error("Gagal mengekspor ZIP");
+    }
+  };
+
+  // ─── Save imported items to storage ───────────────────────────
+  const handleSaveItems = async (targetLessonId: string) => {
+    if (!importedJson) return;
+    setSaving(true);
+    try {
+      const isQuiz = importedJson.type === "quiz";
+      const items = importedJson.items as any[];
+      for (const item of items) {
+        if (isQuiz) {
+          // Resolve correct_answer / answer to full option text
+          const opts: string[] = Array.isArray(item.options) ? item.options.map(String) : [];
+          let answer = String(item.correct_answer ?? item.answer ?? "").trim();
+          if (!opts.find((o) => o === answer)) {
+            const letterMatch = answer.match(/^([A-Da-d])[\.\):\s]/);
+            if (letterMatch) {
+              const idx = "abcd".indexOf(letterMatch[1].toLowerCase());
+              if (idx >= 0 && opts[idx]) answer = opts[idx];
+            } else {
+              const partial = opts.find((o) => o.toLowerCase().includes(answer.toLowerCase()) || answer.toLowerCase().includes(o.toLowerCase()));
+              if (partial) answer = partial;
+            }
+          }
+          await saveQuiz({
+            id: generateId(), lessonId: targetLessonId,
+            question: String(item.question ?? "").trim(),
+            options: opts, answer,
+            explanation: item.explanation ? String(item.explanation).trim() : undefined,
+            type: "multiple-choice", createdAt: new Date().toISOString(),
+          });
+        } else {
+          await saveFlashcard({
+            id: generateId(), lessonId: targetLessonId,
+            question: String(item.question ?? item.front ?? "").trim(),
+            answer: String(item.answer ?? item.back ?? "").trim(),
+            tag: String(item.tag ?? "").trim() || undefined,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+      const label = targetLessonId === STANDALONE_LESSON_ID ? "Koleksi Pribadi" : (selLesson?.name ?? "pelajaran");
+      toast.success(`${items.length} ${isQuiz ? "soal" : "kartu"} disimpan ke ${label}!`);
+      setImportedJson(null);
+      setJsonInput("");
+      setSelLesson(null); setSelModule(null); setSelCourse(null);
+    } catch (e: any) {
+      toast.error("Gagal menyimpan: " + (e?.message ?? ""));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -346,6 +472,7 @@ export const PromptBuilder = () => {
   };
 
   return (
+    <View style={{ flex: 1 }}>
     <ScrollView
       style={styles.root}
       contentContainerStyle={styles.content}
@@ -634,6 +761,50 @@ export const PromptBuilder = () => {
                 )}
               </View>
 
+              {/* ── Save to Personal Collection ── */}
+              <TouchableOpacity
+                style={[styles.saveToPersonalBtn, saving && { opacity: 0.6 }]}
+                onPress={() => handleSaveItems(STANDALONE_LESSON_ID)}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="user" size={16} color="#fff" />}
+                <Text style={styles.saveToPersonalBtnText}>
+                  {saving ? "Menyimpan..." : "Simpan ke Koleksi Pribadi"}
+                </Text>
+              </TouchableOpacity>
+
+              {/* ── Assign to Lesson ── */}
+              <TouchableOpacity
+                style={styles.assignBtn}
+                onPress={() => setPickerStep("course")}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                <Feather name="book-open" size={16} color={Colors.primary} />
+                <Text style={styles.assignBtnText} numberOfLines={1}>
+                  {selLesson
+                    ? `Assign ke: ${selLesson.name}`
+                    : "Assign ke Pelajaran..."}
+                </Text>
+                <Feather name="chevron-right" size={16} color={Colors.primary} />
+              </TouchableOpacity>
+
+              {selLesson && (
+                <TouchableOpacity
+                  style={[styles.saveToLessonBtn, saving && { opacity: 0.6 }]}
+                  onPress={() => handleSaveItems(selLesson.id)}
+                  disabled={saving}
+                  activeOpacity={0.85}
+                >
+                  {saving ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="check" size={16} color="#fff" />}
+                  <Text style={styles.saveToPersonalBtnText}>
+                    {saving ? "Menyimpan..." : `Simpan ke "${selLesson.name}"`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* ── Secondary: Copy & Share ── */}
               <View style={styles.importedActions}>
                 <TouchableOpacity
                   onPress={() => { copyJsonToClipboard(importedJson); toast.success("JSON tersalin!"); }}
@@ -644,20 +815,18 @@ export const PromptBuilder = () => {
                   <Text style={styles.jsonActionBtnText}>Salin JSON</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => { shareJson(importedJson).then(() => toast.success("Dibagikan!")); }}
+                  onPress={() => {
+                    if (!isSharing) {
+                      setIsSharing(true);
+                      shareJson(importedJson).then(() => toast.success("Dibagikan!")).catch(() => {}).finally(() => setIsSharing(false));
+                    }
+                  }}
                   style={[styles.jsonActionBtn, { backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primary, flex: 1 }]}
                   activeOpacity={0.8}
+                  disabled={isSharing}
                 >
                   <Feather name="share-2" size={14} color={Colors.primary} />
                   <Text style={[styles.jsonActionBtnText, { color: Colors.primary }]}>Share</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => { exportAsZip(importedJson, []).then(() => toast.success("ZIP diekspor!")); }}
-                  style={[styles.jsonActionBtn, { backgroundColor: Colors.purpleLight, borderWidth: 1, borderColor: Colors.purple, flex: 1 }]}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="archive" size={14} color={Colors.purple} />
-                  <Text style={[styles.jsonActionBtnText, { color: Colors.purple }]}>ZIP</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -682,6 +851,27 @@ export const PromptBuilder = () => {
 
       <View style={{ height: 48 }} />
     </ScrollView>
+
+      {/* ── Cascade Pickers (absolute overlay on parent) ── */}
+      {pickerStep === "course" && (
+        <PickerSheet title="Pilih Kursus" items={courses}
+          getLabel={(c) => c.name} getSub={(c) => c.description}
+          onSelect={(c) => { setSelCourse(c); setSelModule(null); setSelLesson(null); setPickerStep("module"); }}
+          onClose={() => setPickerStep(null)} />
+      )}
+      {pickerStep === "module" && selCourse && (
+        <PickerSheet title={`Modul di "${selCourse.name}"`} items={modules}
+          getLabel={(m) => m.name} getSub={(m) => m.description}
+          onSelect={(m) => { setSelModule(m); setSelLesson(null); setPickerStep("lesson"); }}
+          onClose={() => setPickerStep(null)} onBack={() => setPickerStep("course")} />
+      )}
+      {pickerStep === "lesson" && selModule && (
+        <PickerSheet title={`Pelajaran di "${selModule.name}"`} items={lessons}
+          getLabel={(l) => l.name} getSub={(l) => l.description}
+          onSelect={(l) => { setSelLesson(l); setPickerStep(null); }}
+          onClose={() => setPickerStep(null)} onBack={() => setPickerStep("module")} />
+      )}
+    </View>
   );
 };
 
@@ -913,4 +1103,47 @@ const styles = StyleSheet.create({
   docsHint: { fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: "500", lineHeight: 16 },
   docsSep: { height: 1, backgroundColor: "rgba(255,255,255,0.08)" },
   docsCode: { fontSize: 11, color: "#A5B4FC", lineHeight: 19, fontFamily: "monospace" },
+
+  // Save / Assign buttons
+  saveToPersonalBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9,
+    backgroundColor: Colors.success, borderRadius: 14, paddingVertical: 14,
+  },
+  saveToLessonBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9,
+    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 14,
+  },
+  saveToPersonalBtnText: { fontSize: 14, fontWeight: "900", color: "#fff" },
+  assignBtn: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 12, backgroundColor: Colors.primaryLight,
+  },
+  assignBtnText: { flex: 1, fontSize: 13, fontWeight: "700", color: Colors.primary },
+});
+
+const ps = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+    zIndex: 20,
+  },
+  sheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    maxHeight: "75%", paddingBottom: 24,
+  },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
+  iconBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
+  title: { flex: 1, textAlign: "center", fontSize: 15, fontWeight: "800", color: Colors.dark },
+  list: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
+  item: {
+    flexDirection: "row", alignItems: "center", backgroundColor: Colors.white,
+    borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: Colors.border,
+  },
+  itemLabel: { fontSize: 14, fontWeight: "800", color: Colors.dark, marginBottom: 2 },
+  itemSub: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
+  empty: { alignItems: "center", paddingVertical: 36, gap: 10 },
+  emptyText: { fontSize: 14, color: Colors.textMuted, fontWeight: "600" },
 });
