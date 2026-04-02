@@ -102,6 +102,12 @@ export default function Dashboard() {
               <Text style={styles.nameText}>{firstName} 👋</Text>
             </View>
             <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={() => router.push("/search" as any)}
+              >
+                <Feather name="search" size={18} color="#fff" />
+              </TouchableOpacity>
               {wrongCount > 0 && (
                 <TouchableOpacity
                   style={styles.iconBtn}

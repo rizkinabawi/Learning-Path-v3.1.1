@@ -56,12 +56,19 @@ export default function QuizScreen() {
     (async () => {
       const data = await getQuizzes(lessonId);
       setQuizzes(data);
-      const lessons = await getLessons();
-      const lesson = lessons.find((l) => l.id === lessonId);
-      if (lesson) setLessonName(lesson.name);
-      const idx = lessons.findIndex((l) => l.id === lessonId);
-      if (idx !== -1 && idx + 1 < lessons.length) {
-        setNextLesson(lessons[idx + 1]);
+      if (lessonId?.startsWith("__sc__")) {
+        const { getStandaloneCollections } = await import("@/utils/storage");
+        const cols = await getStandaloneCollections();
+        const col = cols.find((c) => c.id === lessonId);
+        if (col) setLessonName(col.name);
+      } else {
+        const lessons = await getLessons();
+        const lesson = lessons.find((l) => l.id === lessonId);
+        if (lesson) setLessonName(lesson.name);
+        const idx = lessons.findIndex((l) => l.id === lessonId);
+        if (idx !== -1 && idx + 1 < lessons.length) {
+          setNextLesson(lessons[idx + 1]);
+        }
       }
     })();
   }, [lessonId]);
