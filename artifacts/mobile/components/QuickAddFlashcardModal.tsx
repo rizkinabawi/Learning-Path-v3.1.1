@@ -10,7 +10,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "@/utils/fs-compat";
 import {
   getLearningPaths, getModules, getLessons, saveFlashcard, generateId,
-  STANDALONE_LESSON_ID,
+  saveStandaloneCollection, STANDALONE_COLLECTION_PREFIX,
   type LearningPath, type Module, type Lesson, type Flashcard,
 } from "@/utils/storage";
 import Colors, { shadowSm } from "@/constants/colors";
@@ -155,6 +155,9 @@ export function QuickAddFlashcardModal({ visible, onClose, onSaved }: Props) {
   const [promptCopied, setPromptCopied] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState("");
 
+  // Collection name (when saving standalone without a lesson)
+  const [collectionName, setCollectionName] = useState("");
+
   // JSON Import
   const [importJson, setImportJson] = useState("");
   const [importing, setImporting] = useState(false);
@@ -179,12 +182,20 @@ export function QuickAddFlashcardModal({ visible, onClose, onSaved }: Props) {
     setActiveTab("manual");
     setQuestion(""); setAnswer(""); setTag(""); setImageUri(null);
     setSelCourse(null); setSelModule(null); setSelLesson(null); setPickerStep(null);
+    setCollectionName("");
     setPromptTopic(""); setPromptCount("10"); setPromptDifficulty("medium");
     setPromptLanguage("Bahasa Indonesia"); setPromptCustomNote(""); setGeneratedPrompt(""); setPromptCopied(false);
     setImportJson("");
   };
 
-  const targetLessonId = selLesson?.id ?? STANDALONE_LESSON_ID;
+  /** Resolve or create a lessonId for the target location */
+  const resolveTargetId = async (autoName: string): Promise<string> => {
+    if (selLesson) return selLesson.id;
+    const colId = STANDALONE_COLLECTION_PREFIX + generateId();
+    const name = collectionName.trim() || autoName;
+    await saveStandaloneCollection({ id: colId, name, type: "flashcard", createdAt: new Date().toISOString() });
+    return colId;
+  };
 
   const pickImage = async () => {
     if ((Platform.OS as string) !== "web") {
@@ -205,9 +216,10 @@ export function QuickAddFlashcardModal({ visible, onClose, onSaved }: Props) {
         try { await ensureDir(); const ext = imageUri.split(".").pop()?.split("?")[0] ?? "jpg"; const dest = IMAGE_DIR + id + "." + ext; await FileSystem.copyAsync({ from: imageUri, to: dest }); savedImage = dest; }
         catch { savedImage = imageUri; }
       } else if (imageUri) { savedImage = imageUri; }
-      const card: Flashcard = { id, lessonId: targetLessonId, question: question.trim(), answer: answer.trim(), tag: tag.trim(), image: savedImage, createdAt: new Date().toISOString() };
+      const lessonId = await resolveTargetId("Koleksi Flashcard Baru");
+      const card: Flashcard = { id, lessonId, question: question.trim(), answer: answer.trim(), tag: tag.trim(), image: savedImage, createdAt: new Date().toISOString() };
       await saveFlashcard(card);
-      toast.success(selLesson ? "Flashcard berhasil ditambahkan!" : "Flashcard disimpan ke Koleksi Pribadi!");
+      toast.success(selLesson ? "Flashcard berhasil ditambahkan!" : "Flashcard disimpan ke koleksi baru!");
       onSaved(); onClose();
     } catch (e: any) { toast.error("Gagal menyimpan: " + (e?.message ?? "")); }
     finally { setSaving(false); }
@@ -231,14 +243,16 @@ export function QuickAddFlashcardModal({ visible, onClose, onSaved }: Props) {
       let rawItems: any[] = Array.isArray(parsed) ? parsed : parsed?.items ?? parsed?.flashcards ?? (typeof parsed === "object" ? [parsed] : []);
       const valid = rawItems.filter((item) => (item.question ?? item.front ?? item.pertanyaan) && (item.answer ?? item.back ?? item.jawaban));
       if (valid.length === 0) { Alert.alert("Tidak Ada Data Valid", "Pastikan JSON memiliki field \"question\" dan \"answer\"."); setImporting(false); return; }
-      const ok = await new Promise<boolean>((res) => Alert.alert("Konfirmasi Import", `Import ${valid.length} flashcard ke ${selLesson ? `"${selLesson.name}"` : "Koleksi Pribadi"}?`, [{ text: "Batal", style: "cancel", onPress: () => res(false) }, { text: "Import", onPress: () => res(true) }]));
+      const dest = selLesson ? `"${selLesson.name}"` : `koleksi baru${collectionName.trim() ? ` "${collectionName.trim()}"` : ""}`;
+      const ok = await new Promise<boolean>((res) => Alert.alert("Konfirmasi Import", `Import ${valid.length} flashcard ke ${dest}?`, [{ text: "Batal", style: "cancel", onPress: () => res(false) }, { text: "Import", onPress: () => res(true) }]));
       if (!ok) { setImporting(false); return; }
+      const lessonId = await resolveTargetId(`Koleksi ${valid.length} Flashcard`);
       for (const item of valid) {
         const q = String(item.question ?? item.front ?? item.pertanyaan ?? "").trim();
         const a = String(item.answer ?? item.back ?? item.jawaban ?? "").trim();
         const tg = String(item.tag ?? item.kategori ?? "").trim();
         if (!q) continue;
-        await saveFlashcard({ id: generateId(), lessonId: targetLessonId, question: q, answer: a, tag: tg, createdAt: new Date().toISOString() });
+        await saveFlashcard({ id: generateId(), lessonId, question: q, answer: a, tag: tg, createdAt: new Date().toISOString() });
       }
       toast.success(`${valid.length} flashcard berhasil diimport!`);
       onSaved(); onClose();
@@ -297,10 +311,20 @@ export function QuickAddFlashcardModal({ visible, onClose, onSaved }: Props) {
                 <Feather name="chevron-right" size={16} color={Colors.textMuted} />
               </TouchableOpacity>
               {!selLesson && (
-                <View style={s.standaloneBadge}>
-                  <Feather name="user" size={12} color={Colors.textMuted} />
-                  <Text style={s.standaloneBadgeText}>Akan masuk ke Koleksi Pribadi kamu</Text>
-                </View>
+                <>
+                  <View style={s.standaloneBadge}>
+                    <Feather name="folder" size={12} color="#10B981" />
+                    <Text style={[s.standaloneBadgeText, { color: "#10B981" }]}>Akan dibuat sebagai koleksi tersendiri</Text>
+                  </View>
+                  <Text style={[s.label, { marginTop: 6 }]}>Nama Koleksi <Text style={s.optional}>(opsional)</Text></Text>
+                  <TextInput
+                    style={[s.input, { minHeight: 44 }]}
+                    placeholder="Contoh: Kartu Bahasa Inggris, Biologi Sel…"
+                    placeholderTextColor={Colors.textMuted}
+                    value={collectionName}
+                    onChangeText={setCollectionName}
+                  />
+                </>
               )}
 
               {/* ══════════ MANUAL TAB ══════════ */}

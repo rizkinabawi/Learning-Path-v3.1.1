@@ -9,7 +9,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "@/utils/fs-compat";
 import {
   getLearningPaths, getModules, getLessons, saveQuiz, generateId,
-  STANDALONE_LESSON_ID,
+  saveStandaloneCollection, STANDALONE_COLLECTION_PREFIX,
   type LearningPath, type Module, type Lesson, type Quiz,
 } from "@/utils/storage";
 import Colors, { shadowSm } from "@/constants/colors";
@@ -174,6 +174,9 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
   const [promptCopied, setPromptCopied] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState("");
 
+  // Collection name (when saving standalone without a lesson)
+  const [collectionName, setCollectionName] = useState("");
+
   // JSON Import
   const [importJson, setImportJson] = useState("");
   const [importing, setImporting] = useState(false);
@@ -199,14 +202,23 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
     setQuizType("multiple-choice"); setQuestion(""); setOptions(["", "", "", ""]);
     setAnswerIndex(null); setTfAnswer(null); setExplanation("");
     setSelCourse(null); setSelModule(null); setSelLesson(null); setPickerStep(null);
+    setCollectionName("");
     setPromptTopic(""); setPromptCount("10"); setPromptDifficulty("medium");
     setPromptLanguage("Bahasa Indonesia"); setPromptCustomNote(""); setGeneratedPrompt(""); setPromptCopied(false);
     setImportJson("");
   };
 
   const updateOption = (i: number, val: string) => setOptions((prev) => { const next = [...prev]; next[i] = val; return next; });
-  const targetLessonId = selLesson?.id ?? STANDALONE_LESSON_ID;
   const lessonLabel = selLesson ? `${selCourse?.name} › ${selModule?.name} › ${selLesson.name}` : "Pilih pelajaran tujuan";
+
+  /** Resolve or create a lessonId for the target location */
+  const resolveTargetId = async (autoName: string): Promise<string> => {
+    if (selLesson) return selLesson.id;
+    const colId = STANDALONE_COLLECTION_PREFIX + generateId();
+    const name = collectionName.trim() || autoName;
+    await saveStandaloneCollection({ id: colId, name, type: "quiz", createdAt: new Date().toISOString() });
+    return colId;
+  };
 
   const handleSave = async () => {
     if (!question.trim()) { toast.error("Pertanyaan wajib diisi"); return; }
@@ -224,9 +236,10 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
     }
     setSaving(true);
     try {
-      const quiz: Quiz = { id: generateId(), lessonId: targetLessonId, question: question.trim(), options: finalOptions, answer: finalAnswer, type: quizType, explanation: explanation.trim() || undefined, createdAt: new Date().toISOString() };
+      const lessonId = await resolveTargetId("Koleksi Soal Baru");
+      const quiz: Quiz = { id: generateId(), lessonId, question: question.trim(), options: finalOptions, answer: finalAnswer, type: quizType, explanation: explanation.trim() || undefined, createdAt: new Date().toISOString() };
       await saveQuiz(quiz);
-      toast.success(selLesson ? "Soal berhasil ditambahkan!" : "Soal disimpan ke Koleksi Pribadi!");
+      toast.success(selLesson ? "Soal berhasil ditambahkan!" : "Soal disimpan ke koleksi baru!");
       onSaved(); onClose();
     } catch (e: any) { toast.error("Gagal menyimpan: " + (e?.message ?? "")); }
     finally { setSaving(false); }
@@ -253,12 +266,14 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
         Alert.alert("Tidak Ada Soal Valid", 'Pastikan JSON memiliki field "question", "options" (array), dan "correct_answer".');
         setImporting(false); return;
       }
-      const ok = await new Promise<boolean>((res) => Alert.alert("Konfirmasi Import", `Import ${valid.length} soal ke ${selLesson ? `"${selLesson.name}"` : "Koleksi Pribadi"}?`, [{ text: "Batal", style: "cancel", onPress: () => res(false) }, { text: "Import", onPress: () => res(true) }]));
+      const dest = selLesson ? `"${selLesson.name}"` : `koleksi baru${collectionName.trim() ? ` "${collectionName.trim()}"` : ""}`;
+      const ok = await new Promise<boolean>((res) => Alert.alert("Konfirmasi Import", `Import ${valid.length} soal ke ${dest}?`, [{ text: "Batal", style: "cancel", onPress: () => res(false) }, { text: "Import", onPress: () => res(true) }]));
       if (!ok) { setImporting(false); return; }
+      const lessonId = await resolveTargetId(`Koleksi ${valid.length} Soal`);
       for (const item of valid) {
         const { opts, answer } = resolveAnswer(item);
         if (!answer) continue;
-        await saveQuiz({ id: generateId(), lessonId: targetLessonId, question: String(item.question).trim(), options: opts, answer, explanation: item.explanation ? String(item.explanation).trim() : undefined, type: "multiple-choice", createdAt: new Date().toISOString() });
+        await saveQuiz({ id: generateId(), lessonId, question: String(item.question).trim(), options: opts, answer, explanation: item.explanation ? String(item.explanation).trim() : undefined, type: "multiple-choice", createdAt: new Date().toISOString() });
       }
       toast.success(`${valid.length} soal berhasil diimport!`);
       onSaved(); onClose();
@@ -318,10 +333,20 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
                 <Feather name="chevron-right" size={16} color={Colors.textMuted} />
               </TouchableOpacity>
               {!selLesson && (
-                <View style={s.standaloneBadge}>
-                  <Feather name="user" size={12} color={Colors.textMuted} />
-                  <Text style={s.standaloneBadgeText}>Akan masuk ke Koleksi Pribadi kamu</Text>
-                </View>
+                <>
+                  <View style={s.standaloneBadge}>
+                    <Feather name="folder" size={12} color={QUIZ_COLOR} />
+                    <Text style={[s.standaloneBadgeText, { color: QUIZ_COLOR }]}>Akan dibuat sebagai koleksi tersendiri</Text>
+                  </View>
+                  <Text style={[s.label, { marginTop: 6 }]}>Nama Koleksi <Text style={s.optional}>(opsional)</Text></Text>
+                  <TextInput
+                    style={[s.input, { minHeight: 44 }]}
+                    placeholder="Contoh: Soal Matematika, Ujian Kimia…"
+                    placeholderTextColor={Colors.textMuted}
+                    value={collectionName}
+                    onChangeText={setCollectionName}
+                  />
+                </>
               )}
 
               {/* ══════════ MANUAL TAB ══════════ */}

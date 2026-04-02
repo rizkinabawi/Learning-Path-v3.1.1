@@ -8,9 +8,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import {
-  getLearningPaths, getModules, getLessons, getFlashcards, saveFlashcard,
-  STANDALONE_LESSON_ID,
-  type LearningPath, type Module, type Lesson, type Flashcard,
+  getLearningPaths, getModules, getLessons, getFlashcards,
+  getStandaloneCollections, saveStandaloneCollection,
+  deleteStandaloneCollection, assignStandaloneCollection,
+  type LearningPath, type Module, type Lesson, type StandaloneCollection,
 } from "@/utils/storage";
 import Colors, { shadowSm } from "@/constants/colors";
 import { useTranslation } from "@/contexts/LanguageContext";
@@ -23,6 +24,11 @@ interface LessonRow {
   count: number;
 }
 
+interface CollectionRow {
+  col: StandaloneCollection;
+  count: number;
+}
+
 const GRAD: [string, string][] = [
   ["#4C6FFF", "#7C47FF"],
   ["#FF6B6B", "#FF9500"],
@@ -32,15 +38,93 @@ const GRAD: [string, string][] = [
   ["#F59E0B", "#EF4444"],
 ];
 
-const STANDALONE_GRAD: [string, string] = ["#10B981", "#059669"];
+const COL_GRADS: [string, string][] = [
+  ["#10B981", "#059669"],
+  ["#6366F1", "#8B5CF6"],
+  ["#F59E0B", "#EF4444"],
+  ["#38BDF8", "#0EA5E9"],
+  ["#EC4899", "#F43F5E"],
+  ["#14B8A6", "#0D9488"],
+];
 
-// ─── Assign Modal ───────────────────────────────────────────────
-function AssignModal({
-  card,
+// ─── Collection Edit Modal ───────────────────────────────────────
+function CollectionEditModal({
+  col,
+  onClose,
+  onSaved,
+}: {
+  col: StandaloneCollection;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(col.name);
+  const [desc, setDesc] = useState(col.description ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await saveStandaloneCollection({ ...col, name: name.trim(), description: desc.trim() || undefined });
+      onSaved();
+      onClose();
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={em.overlay}>
+        <View style={em.sheet}>
+          <View style={em.handle} />
+          <View style={em.header}>
+            <Text style={em.title}>Edit Koleksi</Text>
+            <TouchableOpacity style={em.iconBtn} onPress={onClose}>
+              <Feather name="x" size={20} color={Colors.dark} />
+            </TouchableOpacity>
+          </View>
+          <View style={em.body}>
+            <Text style={em.label}>Nama Koleksi *</Text>
+            <TextInput
+              style={em.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Nama koleksi…"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <Text style={em.label}>Deskripsi <Text style={em.optional}>(opsional)</Text></Text>
+            <TextInput
+              style={[em.input, { minHeight: 76 }]}
+              value={desc}
+              onChangeText={setDesc}
+              placeholder="Deskripsi singkat…"
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              textAlignVertical="top"
+            />
+            <TouchableOpacity
+              style={[em.saveBtn, (!name.trim() || saving) && { opacity: 0.5 }]}
+              onPress={handleSave}
+              disabled={!name.trim() || saving}
+            >
+              {saving ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="check" size={17} color="#fff" />}
+              <Text style={em.saveBtnText}>{saving ? "Menyimpan…" : "Simpan Perubahan"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Collection Assign Modal (cascade: Course → Module → Lesson) ─
+function CollectionAssignModal({
+  col,
+  count,
   onClose,
   onAssigned,
 }: {
-  card: Flashcard;
+  col: StandaloneCollection;
+  count: number;
   onClose: () => void;
   onAssigned: () => void;
 }) {
@@ -52,9 +136,7 @@ function AssignModal({
   const [selModule, setSelModule] = useState<Module | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    getLearningPaths().then(setCourses);
-  }, []);
+  useEffect(() => { getLearningPaths().then(setCourses); }, []);
 
   useEffect(() => {
     if (!selCourse) return;
@@ -69,42 +151,16 @@ function AssignModal({
   const handleAssign = async (lesson: Lesson) => {
     setSaving(true);
     try {
-      await saveFlashcard({ ...card, lessonId: lesson.id });
+      await assignStandaloneCollection(col.id, lesson.id);
       onAssigned();
       onClose();
-    } catch {
-      setSaving(false);
-    }
+    } catch { setSaving(false); }
   };
 
-  const title =
-    step === "course" ? "Pilih Kursus" :
-    step === "module" ? `Modul di "${selCourse?.name}"` :
-    `Pelajaran di "${selModule?.name}"`;
-
-  const items: (LearningPath | Module | Lesson)[] =
-    step === "course" ? courses :
-    step === "module" ? modules :
-    lessons;
-
-  const getLabel = (item: LearningPath | Module | Lesson) => item.name;
-
-  const onSelect = (item: LearningPath | Module | Lesson) => {
-    if (step === "course") {
-      setSelCourse(item as LearningPath);
-      setStep("module");
-    } else if (step === "module") {
-      setSelModule(item as Module);
-      setStep("lesson");
-    } else {
-      handleAssign(item as Lesson);
-    }
-  };
-
-  const onBack = () => {
-    if (step === "module") setStep("course");
-    else if (step === "lesson") setStep("module");
-  };
+  const stepTitle = step === "course" ? "Pilih Kursus" : step === "module" ? "Pilih Modul" : "Pilih Pelajaran";
+  const items = step === "course" ? courses : step === "module" ? modules : lessons;
+  const getLabel = (item: any) => item.name ?? "";
+  const getSub = (item: any) => item.description ?? "";
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -113,39 +169,47 @@ function AssignModal({
           <View style={am.handle} />
           <View style={am.header}>
             {step !== "course" ? (
-              <TouchableOpacity style={am.backBtn} onPress={onBack}>
+              <TouchableOpacity style={am.backBtn} onPress={() => setStep(step === "module" ? "course" : "module")}>
                 <Feather name="arrow-left" size={18} color={Colors.dark} />
               </TouchableOpacity>
             ) : <View style={{ width: 34 }} />}
-            <Text style={am.title} numberOfLines={1}>{title}</Text>
+            <Text style={am.title} numberOfLines={1}>{stepTitle}</Text>
             <TouchableOpacity style={am.backBtn} onPress={onClose}>
               <Feather name="x" size={18} color={Colors.dark} />
             </TouchableOpacity>
           </View>
 
-          <Text style={am.cardPreview} numberOfLines={2}>"{card.question}"</Text>
+          <Text style={am.colPreview} numberOfLines={2}>
+            Assign "{col.name}" ({count} kartu) ke pelajaran tujuan
+          </Text>
 
           {saving ? (
             <View style={am.loadingWrap}>
               <ActivityIndicator color={Colors.primary} />
-              <Text style={{ color: Colors.textMuted, fontSize: 13, fontWeight: "600" }}>Memindahkan...</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: 13 }}>Memindahkan…</Text>
             </View>
           ) : items.length === 0 ? (
             <View style={am.empty}>
-              <Feather name="inbox" size={32} color={Colors.textMuted} />
+              <Feather name="inbox" size={28} color={Colors.textMuted} />
               <Text style={am.emptyText}>Tidak ada data</Text>
             </View>
           ) : (
             <ScrollView contentContainerStyle={am.list}>
-              {(items as Array<{ id: string; name: string; description?: string }>).map((item) => (
-                <TouchableOpacity key={item.id} style={[am.item, shadowSm]} onPress={() => onSelect(item as any)}>
+              {items.map((item: any) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[am.item, shadowSm]}
+                  onPress={() => {
+                    if (step === "course") { setSelCourse(item); setStep("module"); }
+                    else if (step === "module") { setSelModule(item); setStep("lesson"); }
+                    else handleAssign(item);
+                  }}
+                >
                   <View style={{ flex: 1 }}>
-                    <Text style={am.itemLabel}>{getLabel(item as any)}</Text>
-                    {item.description ? (
-                      <Text style={am.itemSub} numberOfLines={1}>{item.description}</Text>
-                    ) : null}
+                    <Text style={am.itemLabel}>{getLabel(item)}</Text>
+                    {getSub(item) ? <Text style={am.itemSub} numberOfLines={1}>{getSub(item)}</Text> : null}
                   </View>
-                  <Feather name="chevron-right" size={16} color={Colors.textMuted} />
+                  <Feather name={step === "lesson" ? "check-circle" : "chevron-right"} size={16} color={step === "lesson" ? Colors.success : Colors.textMuted} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -162,26 +226,33 @@ export default function FlashcardBrowseAll() {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const [rows, setRows] = useState<LessonRow[]>([]);
-  const [standaloneCards, setStandaloneCards] = useState<Flashcard[]>([]);
+  const [collections, setCollections] = useState<CollectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showAdd, setShowAdd] = useState(false);
-  const [standaloneExpanded, setStandaloneExpanded] = useState(false);
-  const [assignCard, setAssignCard] = useState<Flashcard | null>(null);
+  const [editCol, setEditCol] = useState<StandaloneCollection | null>(null);
+  const [assignCol, setAssignCol] = useState<CollectionRow | null>(null);
 
-  useEffect(() => {
-    loadAll();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [paths, standalone] = await Promise.all([
+    const [paths, cols] = await Promise.all([
       getLearningPaths(),
-      getFlashcards(STANDALONE_LESSON_ID),
+      getStandaloneCollections("flashcard"),
     ]);
-    setStandaloneCards(standalone);
 
+    // Build collection rows with count
+    const colRows: CollectionRow[] = await Promise.all(
+      cols.map(async (col) => {
+        const cards = await getFlashcards(col.id);
+        return { col, count: cards.length };
+      })
+    );
+    setCollections(colRows.sort((a, b) => b.col.createdAt.localeCompare(a.col.createdAt)));
+
+    // Build course-linked rows
     const result: LessonRow[] = [];
     for (const path of paths) {
       const mods = (await getModules(path.id)).sort((a, b) => a.order - b.order);
@@ -194,13 +265,11 @@ export default function FlashcardBrowseAll() {
       }
     }
     setRows(result);
-    if (result.length > 0) {
-      setExpanded({ [result[0].path.id]: true });
-    }
+    if (result.length > 0) setExpanded({ [result[0].path.id]: true });
     setLoading(false);
   }, []);
 
-  // Group by path
+  // Group course rows by path
   const grouped = useMemo(() => {
     const filtered = rows.filter((r) => {
       const q = search.toLowerCase();
@@ -220,22 +289,41 @@ export default function FlashcardBrowseAll() {
     return Object.values(map);
   }, [rows, search]);
 
-  const filteredStandalone = useMemo(() => {
-    if (!search) return standaloneCards;
+  const filteredCollections = useMemo(() => {
+    if (!search) return collections;
     const q = search.toLowerCase();
-    return standaloneCards.filter(
-      (c) => c.question.toLowerCase().includes(q) || c.answer.toLowerCase().includes(q) || (c.tag ?? "").toLowerCase().includes(q)
+    return collections.filter(
+      (c) => c.col.name.toLowerCase().includes(q) || (c.col.description ?? "").toLowerCase().includes(q)
     );
-  }, [standaloneCards, search]);
+  }, [collections, search]);
 
-  const totalCards = rows.reduce((s, r) => s + r.count, 0) + standaloneCards.length;
+  const totalCards = rows.reduce((s, r) => s + r.count, 0) + collections.reduce((s, c) => s + c.count, 0);
+
   const pathColors = useMemo(() => {
     const map: Record<string, [string, string]> = {};
     rows.forEach((r, i) => { if (!map[r.path.id]) map[r.path.id] = GRAD[i % GRAD.length]; });
     return map;
   }, [rows]);
 
-  const hasContent = grouped.length > 0 || filteredStandalone.length > 0;
+  const handleDeleteCollection = (col: StandaloneCollection) => {
+    Alert.alert(
+      "Hapus Koleksi?",
+      `"${col.name}" dan semua isinya akan dihapus permanen.`,
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: async () => {
+            await deleteStandaloneCollection(col.id);
+            loadAll();
+          },
+        },
+      ]
+    );
+  };
+
+  const hasContent = grouped.length > 0 || filteredCollections.length > 0;
 
   return (
     <View style={styles.root}>
@@ -245,10 +333,18 @@ export default function FlashcardBrowseAll() {
         onClose={() => setShowAdd(false)}
         onSaved={loadAll}
       />
-      {assignCard && (
-        <AssignModal
-          card={assignCard}
-          onClose={() => setAssignCard(null)}
+      {editCol && (
+        <CollectionEditModal
+          col={editCol}
+          onClose={() => setEditCol(null)}
+          onSaved={loadAll}
+        />
+      )}
+      {assignCol && (
+        <CollectionAssignModal
+          col={assignCol.col}
+          count={assignCol.count}
+          onClose={() => setAssignCol(null)}
           onAssigned={loadAll}
         />
       )}
@@ -311,10 +407,10 @@ export default function FlashcardBrowseAll() {
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyEmoji}>🃏</Text>
           <Text style={styles.emptyTitle}>
-            {(rows.length === 0 && standaloneCards.length === 0) ? t.browse.empty_flash : t.browse.not_found}
+            {(rows.length === 0 && collections.length === 0) ? t.browse.empty_flash : t.browse.not_found}
           </Text>
           <Text style={styles.emptySub}>
-            {(rows.length === 0 && standaloneCards.length === 0) ? t.browse.flash_empty_sub : t.browse.try_other}
+            {(rows.length === 0 && collections.length === 0) ? t.browse.flash_empty_sub : t.browse.try_other}
           </Text>
           <TouchableOpacity
             style={styles.emptyFabHint}
@@ -328,70 +424,108 @@ export default function FlashcardBrowseAll() {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
 
-          {/* ── Koleksi Pribadi (standalone) ── */}
-          {filteredStandalone.length > 0 && (
-            <View style={[styles.courseCard, shadowSm, styles.standaloneCard]}>
-              {/* Section header */}
-              <TouchableOpacity
-                style={styles.courseHeader}
-                onPress={() => setStandaloneExpanded((p) => !p)}
-                activeOpacity={0.75}
-              >
-                <LinearGradient colors={STANDALONE_GRAD} style={styles.courseIcon}>
-                  <Feather name="user" size={20} color="#fff" />
+          {/* ── Koleksi Pribadi (standalone collections) ── */}
+          {filteredCollections.length > 0 && (
+            <View style={styles.sectionWrap}>
+              <View style={styles.sectionHeader}>
+                <LinearGradient colors={["#10B981", "#059669"]} style={styles.sectionIcon}>
+                  <Feather name="folder" size={16} color="#fff" />
                 </LinearGradient>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.courseName}>Koleksi Pribadi</Text>
-                  <Text style={styles.courseMeta}>
-                    {filteredStandalone.length} kartu · Tidak terikat kursus
-                  </Text>
+                  <Text style={styles.sectionTitle}>Koleksi Pribadi</Text>
+                  <Text style={styles.sectionMeta}>{filteredCollections.length} koleksi · Tidak terikat kursus</Text>
                 </View>
-                <View style={styles.standaloneActions}>
-                  {filteredStandalone.length > 0 && (
-                    <TouchableOpacity
-                      style={[styles.startBtn, { backgroundColor: STANDALONE_GRAD[0], width: 36, height: 36, borderRadius: 10 }]}
-                      onPress={() => router.push(`/flashcard/${STANDALONE_LESSON_ID}` as any)}
-                    >
-                      <Feather name="play" size={14} color="#fff" />
-                    </TouchableOpacity>
-                  )}
-                  <Feather name={standaloneExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.textMuted} />
-                </View>
-              </TouchableOpacity>
+              </View>
 
-              {/* Individual cards when expanded */}
-              {standaloneExpanded && (
-                <View style={styles.moduleWrap}>
-                  <View style={styles.moduleLabel}>
-                    <View style={[styles.moduleDot, { backgroundColor: STANDALONE_GRAD[0] }]} />
-                    <Text style={styles.moduleName}>Kartu Mandiri</Text>
-                  </View>
-                  {filteredStandalone.map((card) => (
-                    <View key={card.id} style={[styles.lessonRow, styles.standaloneCardRow]}>
-                      <View style={styles.lessonLeft}>
-                        <View style={[styles.lessonDot, { backgroundColor: STANDALONE_GRAD[0] + "60" }]} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.lessonName} numberOfLines={2}>{card.question}</Text>
-                          <Text style={styles.lessonDesc} numberOfLines={1}>{card.answer}</Text>
-                          {card.tag ? (
-                            <View style={styles.tagChip}>
-                              <Text style={styles.tagText}>#{card.tag}</Text>
-                            </View>
-                          ) : null}
+              <View style={styles.collectionGrid}>
+                {filteredCollections.map((cr, idx) => {
+                  const grad = COL_GRADS[idx % COL_GRADS.length];
+                  const createdDate = new Date(cr.col.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+                  return (
+                    <TouchableOpacity
+                      key={cr.col.id}
+                      style={[styles.colCard, shadowSm]}
+                      onPress={() => cr.count > 0 && router.push(`/flashcard/${cr.col.id}` as any)}
+                      activeOpacity={0.8}
+                    >
+                      {/* Color accent bar */}
+                      <LinearGradient colors={grad} style={styles.colCardBar} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+
+                      {/* Card body */}
+                      <View style={styles.colCardBody}>
+                        <View style={styles.colCardTop}>
+                          <LinearGradient colors={grad} style={styles.colCardIcon}>
+                            <Feather name="layers" size={18} color="#fff" />
+                          </LinearGradient>
+                          <View style={styles.colBadge}>
+                            <Text style={[styles.colBadgeText, { color: grad[0] }]}>FLASHCARD</Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.colCardName} numberOfLines={2}>{cr.col.name}</Text>
+                        {cr.col.description ? (
+                          <Text style={styles.colCardDesc} numberOfLines={1}>{cr.col.description}</Text>
+                        ) : null}
+
+                        <View style={styles.colCardMeta}>
+                          <View style={[styles.countPill, { backgroundColor: grad[0] + "18" }]}>
+                            <Text style={[styles.countPillText, { color: grad[0] }]}>{cr.count} kartu</Text>
+                          </View>
+                          <Text style={styles.colCardDate}>{createdDate}</Text>
                         </View>
                       </View>
-                      <TouchableOpacity
-                        style={styles.assignBtn}
-                        onPress={() => setAssignCard(card)}
-                        activeOpacity={0.8}
-                      >
-                        <Feather name="folder-plus" size={13} color={Colors.primary} />
-                        <Text style={styles.assignBtnText}>Assign</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
+
+                      {/* Action row */}
+                      <View style={styles.colCardActions}>
+                        <TouchableOpacity
+                          style={styles.colAction}
+                          onPress={() => setEditCol(cr.col)}
+                          activeOpacity={0.7}
+                        >
+                          <Feather name="edit-2" size={14} color={Colors.textSecondary} />
+                          <Text style={styles.colActionText}>Edit</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.colActionDivider} />
+
+                        <TouchableOpacity
+                          style={styles.colAction}
+                          onPress={() => setAssignCol(cr)}
+                          activeOpacity={0.7}
+                        >
+                          <Feather name="folder-plus" size={14} color={Colors.primary} />
+                          <Text style={[styles.colActionText, { color: Colors.primary }]}>Assign</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.colActionDivider} />
+
+                        {cr.count > 0 && (
+                          <>
+                            <TouchableOpacity
+                              style={styles.colAction}
+                              onPress={() => router.push(`/flashcard/${cr.col.id}` as any)}
+                              activeOpacity={0.7}
+                            >
+                              <Feather name="play" size={14} color="#10B981" />
+                              <Text style={[styles.colActionText, { color: "#10B981" }]}>Main</Text>
+                            </TouchableOpacity>
+                            <View style={styles.colActionDivider} />
+                          </>
+                        )}
+
+                        <TouchableOpacity
+                          style={styles.colAction}
+                          onPress={() => handleDeleteCollection(cr.col)}
+                          activeOpacity={0.7}
+                        >
+                          <Feather name="trash-2" size={14} color={Colors.danger} />
+                          <Text style={[styles.colActionText, { color: Colors.danger }]}>Hapus</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           )}
 
@@ -403,7 +537,6 @@ export default function FlashcardBrowseAll() {
 
             return (
               <View key={path.id} style={[styles.courseCard, shadowSm]}>
-                {/* Course header */}
                 <TouchableOpacity
                   style={styles.courseHeader}
                   onPress={() => setExpanded((p) => ({ ...p, [path.id]: !p[path.id] }))}
@@ -421,7 +554,6 @@ export default function FlashcardBrowseAll() {
                   <Feather name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={Colors.textMuted} />
                 </TouchableOpacity>
 
-                {/* Modules + Lessons */}
                 {isOpen && Object.values(modules).map(({ module, lessons }) => (
                   <View key={module.id} style={styles.moduleWrap}>
                     <View style={styles.moduleLabel}>
@@ -485,10 +617,7 @@ const styles = StyleSheet.create({
   countBadge: { backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center" },
   countBadgeText: { fontSize: 20, fontWeight: "900", color: "#fff" },
   countBadgeSub: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "700" },
-  searchWrap: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
-  },
+  searchWrap: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.dark, fontWeight: "500" },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { fontSize: 14, color: Colors.textMuted, fontWeight: "600" },
@@ -496,57 +625,76 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48, marginBottom: 4 },
   emptyTitle: { fontSize: 18, fontWeight: "800", color: Colors.dark, textAlign: "center" },
   emptySub: { fontSize: 14, color: Colors.textMuted, fontWeight: "500", textAlign: "center", lineHeight: 20 },
-  emptyFabHint: {
-    flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8,
-    backgroundColor: Colors.primary, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12,
-  },
+  emptyFabHint: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, backgroundColor: Colors.primary, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12 },
   emptyFabHintText: { fontSize: 14, fontWeight: "800", color: "#fff" },
-  list: { padding: 16, paddingBottom: 100, gap: 12 },
+  list: { padding: 16, paddingBottom: 100, gap: 16 },
+  fab: { position: "absolute", right: 20, width: 56, height: 56, borderRadius: 18, backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center", zIndex: 50, shadowColor: Colors.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 10 },
+
+  // ── Standalone Collections Section ──
+  sectionWrap: { gap: 10 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 4 },
+  sectionIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  sectionTitle: { fontSize: 16, fontWeight: "900", color: Colors.dark },
+  sectionMeta: { fontSize: 12, color: Colors.textMuted, fontWeight: "600", marginTop: 2 },
+  collectionGrid: { gap: 10 },
+
+  // ── Collection Card ──
+  colCard: { backgroundColor: "#fff", borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: Colors.border },
+  colCardBar: { height: 5 },
+  colCardBody: { padding: 16, gap: 6 },
+  colCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  colCardIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  colBadge: { backgroundColor: Colors.background, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  colBadgeText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  colCardName: { fontSize: 16, fontWeight: "800", color: Colors.dark, lineHeight: 22 },
+  colCardDesc: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
+  colCardMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6 },
+  countPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  countPillText: { fontSize: 12, fontWeight: "800" },
+  colCardDate: { fontSize: 11, color: Colors.textMuted, fontWeight: "500" },
+
+  // ── Collection Action Row ──
+  colCardActions: { flexDirection: "row", borderTopWidth: 1, borderTopColor: Colors.border },
+  colAction: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 11 },
+  colActionText: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
+  colActionDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 8 },
+
+  // ── Course Cards ──
   courseCard: { backgroundColor: "#fff", borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: Colors.border },
-  standaloneCard: { borderColor: "#10B981" + "40" },
   courseHeader: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
   courseIcon: { width: 46, height: 46, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   courseName: { fontSize: 15, fontWeight: "800", color: Colors.dark },
   courseMeta: { fontSize: 12, color: Colors.textMuted, fontWeight: "600", marginTop: 2 },
-  standaloneActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   moduleWrap: { borderTopWidth: 1, borderTopColor: Colors.border, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   moduleLabel: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   moduleDot: { width: 8, height: 8, borderRadius: 4 },
   moduleName: { fontSize: 12, fontWeight: "800", color: Colors.textSecondary, flex: 1 },
-  lessonRow: {
-    flexDirection: "row", alignItems: "center",
-    paddingVertical: 10, paddingLeft: 16, paddingRight: 4,
-    borderRadius: 12, marginBottom: 4,
-    backgroundColor: Colors.background,
-  },
-  standaloneCardRow: { alignItems: "flex-start", paddingRight: 8 },
+  lessonRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingLeft: 16, paddingRight: 4, borderRadius: 12, marginBottom: 4, backgroundColor: Colors.background },
   lessonLeft: { flex: 1, flexDirection: "row", alignItems: "flex-start", gap: 10, minWidth: 0 },
   lessonDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.border, flexShrink: 0, marginTop: 5 },
   lessonName: { fontSize: 13, fontWeight: "700", color: Colors.dark },
   lessonDesc: { fontSize: 11, color: Colors.textMuted, fontWeight: "500", marginTop: 1 },
-  tagChip: {
-    alignSelf: "flex-start", backgroundColor: Colors.primaryLight,
-    borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginTop: 4,
-  },
-  tagText: { fontSize: 10, fontWeight: "700", color: Colors.primary },
   lessonRight: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 },
   countChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   countChipText: { fontSize: 11, fontWeight: "800" },
   startBtn: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   emptyChip: { fontSize: 11, color: Colors.textMuted, fontWeight: "600" },
-  assignBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    borderWidth: 1.5, borderColor: Colors.primary + "40",
-    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5,
-    backgroundColor: Colors.primaryLight, marginLeft: 8, flexShrink: 0, marginTop: 2,
-  },
-  assignBtnText: { fontSize: 11, fontWeight: "800", color: Colors.primary },
-  fab: {
-    position: "absolute", right: 20, width: 56, height: 56, borderRadius: 18,
-    backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center",
-    zIndex: 50, shadowColor: Colors.primary, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35, shadowRadius: 12, elevation: 10,
-  },
+});
+
+// ─── Edit Modal Styles ──────────────────────────────────────────
+const em = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 28 },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: "center", marginTop: 12, marginBottom: 4 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
+  title: { flex: 1, fontSize: 16, fontWeight: "800", color: Colors.dark },
+  iconBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
+  body: { paddingHorizontal: 20, gap: 6 },
+  label: { fontSize: 13, fontWeight: "700", color: Colors.dark, marginTop: 10 },
+  optional: { fontSize: 12, fontWeight: "500", color: Colors.textMuted },
+  input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.dark, backgroundColor: Colors.background },
+  saveBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#10B981", borderRadius: 14, paddingVertical: 14, marginTop: 16 },
+  saveBtnText: { fontSize: 15, fontWeight: "800", color: "#fff" },
 });
 
 // ─── Assign Modal Styles ────────────────────────────────────────
@@ -557,13 +705,7 @@ const am = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
   title: { flex: 1, textAlign: "center", fontSize: 15, fontWeight: "800", color: Colors.dark },
-  cardPreview: {
-    marginHorizontal: 20, marginBottom: 12, fontSize: 13, fontWeight: "600",
-    color: Colors.textSecondary, fontStyle: "italic",
-    backgroundColor: Colors.background, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 8,
-    borderLeftWidth: 3, borderLeftColor: Colors.primary,
-  },
+  colPreview: { marginHorizontal: 20, marginBottom: 12, fontSize: 13, fontWeight: "600", color: Colors.textSecondary, fontStyle: "italic", backgroundColor: Colors.background, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderLeftWidth: 3, borderLeftColor: "#10B981" },
   loadingWrap: { alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   list: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
   item: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: Colors.border },

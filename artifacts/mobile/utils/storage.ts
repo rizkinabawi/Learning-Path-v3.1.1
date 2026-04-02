@@ -4,6 +4,22 @@ import { Platform } from "react-native";
 /** Special lessonId for flashcards/quizzes created without a course */
 export const STANDALONE_LESSON_ID = "__standalone__";
 
+/** Prefix for standalone collection IDs */
+export const STANDALONE_COLLECTION_PREFIX = "__sc__";
+
+/** Returns true if the lessonId belongs to a standalone collection (or legacy standalone) */
+export const isStandaloneId = (id: string) =>
+  id === STANDALONE_LESSON_ID || id.startsWith(STANDALONE_COLLECTION_PREFIX);
+
+/** A named folder/collection for standalone flashcards or quizzes */
+export interface StandaloneCollection {
+  id: string;          // always starts with STANDALONE_COLLECTION_PREFIX
+  name: string;
+  description?: string;
+  type: "flashcard" | "quiz";
+  createdAt: string;
+}
+
 // Types
 export interface User {
   id: string;
@@ -188,6 +204,7 @@ const STORAGE_KEYS = {
   BOOKMARKS: "bookmarks",
   SPACED_REP: "spaced_rep",
   THEME: "theme",
+  STANDALONE_COLLECTIONS: "standalone_collections",
 };
 
 export const generateId = () =>
@@ -564,6 +581,69 @@ export const exportCourse = async (pathId?: string): Promise<CoursePack> => {
     materials: materials.filter((m) => lessonIds.has(m.lessonId)),
     notes: notes.filter((n) => lessonIds.has(n.lessonId)),
   };
+};
+
+// ─── Standalone Collections ────────────────────────────────────
+export const getStandaloneCollections = async (
+  type?: "flashcard" | "quiz"
+): Promise<StandaloneCollection[]> => {
+  const all = await getFromStorage<StandaloneCollection>(
+    STORAGE_KEYS.STANDALONE_COLLECTIONS
+  );
+  return type ? all.filter((c) => c.type === type) : all;
+};
+
+export const saveStandaloneCollection = async (
+  col: StandaloneCollection
+): Promise<void> => {
+  const all = await getStandaloneCollections();
+  const idx = all.findIndex((c) => c.id === col.id);
+  if (idx >= 0) all[idx] = col;
+  else all.push(col);
+  await saveToStorage(STORAGE_KEYS.STANDALONE_COLLECTIONS, all);
+};
+
+/** Delete a collection AND all its flashcards/quizzes (by lessonId = col.id) */
+export const deleteStandaloneCollection = async (id: string): Promise<void> => {
+  const all = await getStandaloneCollections();
+  await saveToStorage(
+    STORAGE_KEYS.STANDALONE_COLLECTIONS,
+    all.filter((c) => c.id !== id)
+  );
+  const cards = await getFromStorage<Flashcard>(STORAGE_KEYS.FLASHCARDS);
+  await saveToStorage(
+    STORAGE_KEYS.FLASHCARDS,
+    cards.filter((c) => c.lessonId !== id)
+  );
+  const quizzes = await getFromStorage<Quiz>(STORAGE_KEYS.QUIZZES);
+  await saveToStorage(
+    STORAGE_KEYS.QUIZZES,
+    quizzes.filter((q) => q.lessonId !== id)
+  );
+};
+
+/** Move all items in a collection to a new lessonId, then delete the collection record */
+export const assignStandaloneCollection = async (
+  colId: string,
+  targetLessonId: string
+): Promise<void> => {
+  const cards = await getFromStorage<Flashcard>(STORAGE_KEYS.FLASHCARDS);
+  const updatedCards = cards.map((c) =>
+    c.lessonId === colId ? { ...c, lessonId: targetLessonId } : c
+  );
+  await saveToStorage(STORAGE_KEYS.FLASHCARDS, updatedCards);
+
+  const quizzes = await getFromStorage<Quiz>(STORAGE_KEYS.QUIZZES);
+  const updatedQuizzes = quizzes.map((q) =>
+    q.lessonId === colId ? { ...q, lessonId: targetLessonId } : q
+  );
+  await saveToStorage(STORAGE_KEYS.QUIZZES, updatedQuizzes);
+
+  const all = await getStandaloneCollections();
+  await saveToStorage(
+    STORAGE_KEYS.STANDALONE_COLLECTIONS,
+    all.filter((c) => c.id !== colId)
+  );
 };
 
 export const importCourse = async (pack: CoursePack): Promise<number> => {

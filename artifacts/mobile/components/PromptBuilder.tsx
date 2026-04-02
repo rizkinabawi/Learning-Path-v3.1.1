@@ -19,7 +19,7 @@ import { shareJson, copyJsonToClipboard, type LearningJsonOutput } from "@/utils
 import { exportAsZip } from "@/utils/zip-handler";
 import {
   getLearningPaths, getModules, getLessons, saveFlashcard, saveQuiz, generateId,
-  STANDALONE_LESSON_ID,
+  saveStandaloneCollection, STANDALONE_COLLECTION_PREFIX,
   type LearningPath, type Module, type Lesson,
 } from "@/utils/storage";
 import Colors, { shadow, shadowSm } from "@/constants/colors";
@@ -322,12 +322,21 @@ export const PromptBuilder = () => {
   };
 
   // ─── Save imported items to storage ───────────────────────────
-  const handleSaveItems = async (targetLessonId: string) => {
+  const handleSaveItems = async (targetLessonId: string | null) => {
     if (!importedJson) return;
     setSaving(true);
     try {
       const isQuiz = importedJson.type === "quiz";
       const items = importedJson.items as any[];
+
+      // When no lesson given, create a new standalone collection
+      let resolvedId = targetLessonId ?? "";
+      if (!targetLessonId) {
+        const colId = STANDALONE_COLLECTION_PREFIX + generateId();
+        const colName = `${isQuiz ? "Koleksi Soal" : "Koleksi Flashcard"} (${items.length} item)`;
+        await saveStandaloneCollection({ id: colId, name: colName, type: isQuiz ? "quiz" : "flashcard", createdAt: new Date().toISOString() });
+        resolvedId = colId;
+      }
       for (const item of items) {
         if (isQuiz) {
           // Resolve correct_answer / answer to full option text
@@ -344,7 +353,7 @@ export const PromptBuilder = () => {
             }
           }
           await saveQuiz({
-            id: generateId(), lessonId: targetLessonId,
+            id: generateId(), lessonId: resolvedId,
             question: String(item.question ?? "").trim(),
             options: opts, answer,
             explanation: item.explanation ? String(item.explanation).trim() : undefined,
@@ -352,7 +361,7 @@ export const PromptBuilder = () => {
           });
         } else {
           await saveFlashcard({
-            id: generateId(), lessonId: targetLessonId,
+            id: generateId(), lessonId: resolvedId,
             question: String(item.question ?? item.front ?? "").trim(),
             answer: String(item.answer ?? item.back ?? "").trim(),
             tag: String(item.tag ?? "").trim() || undefined,
@@ -360,7 +369,7 @@ export const PromptBuilder = () => {
           });
         }
       }
-      const label = targetLessonId === STANDALONE_LESSON_ID ? "Koleksi Pribadi" : (selLesson?.name ?? "pelajaran");
+      const label = targetLessonId ? (selLesson?.name ?? "pelajaran") : "koleksi baru";
       toast.success(`${items.length} ${isQuiz ? "soal" : "kartu"} disimpan ke ${label}!`);
       setImportedJson(null);
       setJsonInput("");
@@ -764,13 +773,13 @@ export const PromptBuilder = () => {
               {/* ── Save to Personal Collection ── */}
               <TouchableOpacity
                 style={[styles.saveToPersonalBtn, saving && { opacity: 0.6 }]}
-                onPress={() => handleSaveItems(STANDALONE_LESSON_ID)}
+                onPress={() => handleSaveItems(null)}
                 disabled={saving}
                 activeOpacity={0.85}
               >
-                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="user" size={16} color="#fff" />}
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="folder-plus" size={16} color="#fff" />}
                 <Text style={styles.saveToPersonalBtnText}>
-                  {saving ? "Menyimpan..." : "Simpan ke Koleksi Pribadi"}
+                  {saving ? "Menyimpan..." : "Simpan ke Koleksi Baru"}
                 </Text>
               </TouchableOpacity>
 
