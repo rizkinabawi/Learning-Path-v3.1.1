@@ -22,6 +22,30 @@ import { isCancellationError } from "@/utils/safe-share";
 
 const { width } = Dimensions.get("window");
 
+// ─── Robust JSON extraction (handles smart quotes, code fences, surrounding text) ──
+const normalizeJsonText = (raw: string) =>
+  raw
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"') // smart double quotes
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'") // smart single quotes
+    .replace(/[\u00A0\u200B\u200C\u200D\uFEFF]/g, " ")        // non-breaking / zero-width spaces
+    .replace(/[\u2028\u2029]/g, "\n")                          // line/paragraph separators
+    .replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+const extractJson = (text: string): string => {
+  const t = normalizeJsonText(text).trim();
+  // 1. Markdown code fence (```json ... ``` anywhere in text)
+  const fenceMatch = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch) return normalizeJsonText(fenceMatch[1]).trim();
+  // 2. Extract outermost array or object
+  const arrStart = t.indexOf("["), arrEnd = t.lastIndexOf("]");
+  const objStart = t.indexOf("{"), objEnd = t.lastIndexOf("}");
+  if (arrStart !== -1 && arrEnd !== -1 && (objStart === -1 || arrStart <= objStart)) {
+    return t.slice(arrStart, arrEnd + 1);
+  }
+  if (objStart !== -1 && objEnd !== -1) return t.slice(objStart, objEnd + 1);
+  return t;
+};
+
 const DIFFICULTY_OPTIONS = [
   { id: "beginner", label: "Mudah", color: Colors.success, bg: Colors.successLight },
   { id: "intermediate", label: "Sedang", color: Colors.amber, bg: Colors.amberLight },
@@ -228,13 +252,8 @@ export const PromptBuilder = () => {
       return;
     }
     try {
-      // Strip markdown code fences that AI tools often add (```json ... ```)
-      const cleanedInput = jsonInput
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/\s*```$/i, "")
-        .trim();
-      const raw = JSON.parse(cleanedInput);
+      // Robust cleaning: handles smart quotes, code fences anywhere, surrounding text
+      const raw = JSON.parse(extractJson(jsonInput));
 
       // Normalisasi ke format LearningJsonOutput
       let result: LearningJsonOutput;
@@ -312,7 +331,17 @@ export const PromptBuilder = () => {
       setImportedJson(result);
       toast.success(`Berhasil: ${result.items.length} item di-import`);
     } catch (e: any) {
-      toast.error(e.message === "Format tidak dikenali" ? "Format JSON tidak dikenali" : "JSON tidak valid");
+      const msg = e?.message ?? "";
+      if (msg === "Format tidak dikenali") {
+        toast.error("Format JSON tidak dikenali. Coba flat array: [{...}]");
+      } else if (msg === "Tidak ada item ditemukan") {
+        toast.error("Tidak ada item ditemukan dalam JSON");
+      } else {
+        Alert.alert(
+          "JSON Tidak Dapat Dibaca",
+          "Pastikan teks berisi JSON valid.\n\nTips:\n• Hapus teks pengantar dari AI\n• Pastikan kutip (\") tidak curly\n• Coba salin ulang dari AI\n\nFormat:\n[{\"question\":\"...\",\"answer\":\"...\"}]"
+        );
+      }
     }
   };
 
