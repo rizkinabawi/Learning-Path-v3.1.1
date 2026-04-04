@@ -55,8 +55,8 @@ const DEV = {
     },
     {
       icon: "globe" as const,
-      label: "GitHub Profile",
-      url: "https://github.com/rizkinabawi",
+      label: "kipotraits.com",
+      url: "https://www.kipotraits.com",
       color: Colors.teal,
       bg: Colors.teal + "18",
     },

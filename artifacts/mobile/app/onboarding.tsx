@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import Colors from "@/constants/colors";
 import { Feather } from "@expo/vector-icons";
 import { useTranslation } from "@/contexts/LanguageContext";
+import * as MediaLibrary from "expo-media-library";
 
 const { width } = Dimensions.get("window");
 
@@ -99,6 +100,12 @@ export default function Onboarding() {
       const user = await getUser();
       if (user) router.replace("/(tabs)");
     })();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      MediaLibrary.requestPermissionsAsync();
+    }
   }, []);
 
   const animateTransition = (nextStep: number) => {
