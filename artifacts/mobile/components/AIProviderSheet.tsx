@@ -99,7 +99,9 @@ export function AIProviderSheet({ visible, loading, onClose, onSelect }: Props) 
                         <Text style={[s.providerLabel, !hasKey && s.textMuted]}>
                           {meta.label}
                         </Text>
-                        <Text style={s.providerModel}>{meta.model}</Text>
+                        <Text style={s.providerModel}>
+                          {key?.model ?? meta.model}
+                        </Text>
                         {hasKey ? (
                           <View style={[s.keyBadge, { backgroundColor: meta.bg }]}>
                             <Feather name="check" size={10} color={meta.color} />

@@ -554,7 +554,7 @@ export default function CreateQuizScreen() {
     if (!generatedPrompt) return;
     setAiLoading(true);
     try {
-      const { content } = await callAI(provider, generatedPrompt, key.apiKey);
+      const { content } = await callAI(provider, generatedPrompt, key.apiKey, key.model);
       await processImportText(content);
       setShowAISheet(false);
       setShowImport(false);

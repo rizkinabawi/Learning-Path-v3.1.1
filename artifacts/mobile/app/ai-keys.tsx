@@ -18,9 +18,11 @@ import { Feather } from "@expo/vector-icons";
 import {
   getApiKeys,
   saveApiKey,
+  updateModel,
   deleteApiKey,
   maskKey,
   PROVIDER_META,
+  PROVIDER_MODELS,
   type AIKey,
   type AIProvider,
 } from "@/utils/ai-keys";
@@ -39,6 +41,10 @@ export default function AIKeysScreen() {
     openai: "",
     gemini: "",
   });
+  const [selectedModel, setSelectedModel] = useState<Record<AIProvider, string>>({
+    openai: "gpt-4o-mini",
+    gemini: "gemini-2.0-flash",
+  });
   const [showInput, setShowInput] = useState<Record<AIProvider, boolean>>({
     openai: false,
     gemini: false,
@@ -47,9 +53,35 @@ export default function AIKeysScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getApiKeys().then(setKeys);
+      getApiKeys().then((loaded) => {
+        setKeys(loaded);
+        const modelMap: Record<AIProvider, string> = {
+          openai: "gpt-4o-mini",
+          gemini: "gemini-2.0-flash",
+        };
+        loaded.forEach((k) => {
+          modelMap[k.provider] = k.model;
+        });
+        setSelectedModel(modelMap);
+      });
     }, [])
   );
+
+  const handleModelChange = async (provider: AIProvider, model: string) => {
+    setSelectedModel((p) => ({ ...p, [provider]: model }));
+    const existing = keys.find((k) => k.provider === provider);
+    if (existing) {
+      try {
+        await updateModel(provider, model);
+        setKeys((prev) =>
+          prev.map((k) => (k.provider === provider ? { ...k, model } : k))
+        );
+        toast.success("Model diperbarui!");
+      } catch {
+        toast.error("Gagal memperbarui model.");
+      }
+    }
+  };
 
   const handleSave = async (provider: AIProvider) => {
     const raw = inputs[provider].trim();
@@ -74,7 +106,7 @@ export default function AIKeysScreen() {
   const doSave = async (provider: AIProvider, raw: string) => {
     setSaving(true);
     try {
-      await saveApiKey({ provider, apiKey: raw });
+      await saveApiKey({ provider, apiKey: raw, model: selectedModel[provider] });
       const updated = await getApiKeys();
       setKeys(updated);
       setInputs((p) => ({ ...p, [provider]: "" }));
@@ -149,6 +181,8 @@ export default function AIKeysScreen() {
             const meta = PROVIDER_META[prov];
             const existing = keys.find((k) => k.provider === prov) ?? null;
             const inputOpen = showInput[prov];
+            const models = PROVIDER_MODELS[prov];
+            const activeModel = selectedModel[prov];
 
             return (
               <View key={prov} style={s.card}>
@@ -161,7 +195,7 @@ export default function AIKeysScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.cardTitle}>{meta.label}</Text>
-                    <Text style={s.cardModel}>Model: {meta.model}</Text>
+                    <Text style={s.cardModel}>Model aktif: {activeModel}</Text>
                   </View>
                   {existing ? (
                     <View style={[s.badge, { backgroundColor: Colors.successLight }]}>
@@ -174,6 +208,46 @@ export default function AIKeysScreen() {
                       <Text style={[s.badgeText, { color: Colors.textMuted }]}>Belum ada</Text>
                     </View>
                   )}
+                </View>
+
+                {/* ── MODEL SELECTOR ── */}
+                <View style={s.modelSection}>
+                  <Text style={s.modelSectionLabel}>Pilih Model:</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={s.modelChips}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {models.map((m) => {
+                      const isActive = activeModel === m.id;
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={[
+                            s.modelChip,
+                            isActive && { backgroundColor: meta.color, borderColor: meta.color },
+                          ]}
+                          onPress={() => handleModelChange(prov, m.id)}
+                          activeOpacity={0.8}
+                        >
+                          {isActive && (
+                            <Feather name="check" size={10} color="#fff" />
+                          )}
+                          <Text style={[s.modelChipText, isActive && s.modelChipTextActive]}>
+                            {m.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  {/* Model description */}
+                  {(() => {
+                    const desc = models.find((m) => m.id === activeModel)?.desc;
+                    return desc ? (
+                      <Text style={[s.modelDesc, { color: meta.color }]}>{desc}</Text>
+                    ) : null;
+                  })()}
                 </View>
 
                 {/* Existing Key Display */}
@@ -409,6 +483,47 @@ const s = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
+
+  // ── MODEL SELECTOR ──
+  modelSection: {
+    gap: 6,
+  },
+  modelSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  modelChips: {
+    gap: 6,
+    flexDirection: "row",
+  },
+  modelChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  modelChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark,
+  },
+  modelChipTextActive: {
+    color: "#fff",
+  },
+  modelDesc: {
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+
   existingRow: {
     flexDirection: "row",
     alignItems: "center",

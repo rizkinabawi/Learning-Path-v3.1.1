@@ -6,7 +6,8 @@ export interface AIResponse {
 
 export async function callOpenAI(
   prompt: string,
-  apiKey: string
+  apiKey: string,
+  model = "gpt-4o-mini"
 ): Promise<AIResponse> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -15,7 +16,7 @@ export async function callOpenAI(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model,
       messages: [
         {
           role: "system",
@@ -45,9 +46,10 @@ export async function callOpenAI(
 
 export async function callGemini(
   prompt: string,
-  apiKey: string
+  apiKey: string,
+  model = "gemini-2.0-flash"
 ): Promise<AIResponse> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -87,13 +89,14 @@ export async function callGemini(
 export async function callAI(
   provider: AIProvider,
   prompt: string,
-  apiKey: string
+  apiKey: string,
+  model?: string
 ): Promise<AIResponse> {
   switch (provider) {
     case "openai":
-      return callOpenAI(prompt, apiKey);
+      return callOpenAI(prompt, apiKey, model);
     case "gemini":
-      return callGemini(prompt, apiKey);
+      return callGemini(prompt, apiKey, model);
     default:
       throw new Error("Provider tidak dikenal.");
   }

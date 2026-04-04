@@ -262,7 +262,7 @@ export default function ImportRoadmapScreen() {
     if (!generatedPrompt) return;
     setAiLoading(true);
     try {
-      const { content } = await callAI(provider, generatedPrompt, key.apiKey);
+      const { content } = await callAI(provider, generatedPrompt, key.apiKey, key.model);
       setJsonText(content);
       setParseError(null);
       setPreview(null);
