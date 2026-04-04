@@ -725,20 +725,47 @@ export default function CreateFlashcardScreen() {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={[styles.copyPromptBtn, promptCopied && styles.copyPromptBtnDone]}
-              onPress={handleGenerateAndCopyPrompt}
-              activeOpacity={0.85}
-            >
-              {promptCopied ? (
-                <Check size={16} color={Colors.white} />
-              ) : (
-                <Copy size={16} color={Colors.white} />
-              )}
-              <Text style={styles.copyPromptBtnText}>
-                {promptCopied ? "Prompt Tersalin!" : "Salin Prompt untuk AI"}
-              </Text>
-            </TouchableOpacity>
+            {/* Action buttons row */}
+            <View style={styles.promptActionRow}>
+              <TouchableOpacity
+                style={[styles.copyPromptBtnSmall, promptCopied && styles.copyPromptBtnDone]}
+                onPress={handleGenerateAndCopyPrompt}
+                activeOpacity={0.85}
+              >
+                {promptCopied ? (
+                  <Check size={14} color={Colors.white} />
+                ) : (
+                  <Copy size={14} color={Colors.white} />
+                )}
+                <Text style={styles.copyPromptBtnText}>
+                  {promptCopied ? "Tersalin!" : "Salin Prompt"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.askAiBtn}
+                onPress={() => setShowAISheet(true)}
+                activeOpacity={0.85}
+                disabled={aiLoading}
+              >
+                <LinearGradient
+                  colors={["#10A37F", "#4285F4"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.askAiGrad}
+                >
+                  {aiLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 14 }}>🤖</Text>
+                      <Text style={styles.askAiBtnText}>Ask Your AI</Text>
+                      <Text style={{ fontSize: 11, color: "#fff" }}>⚡</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.stepsGuide}>
               <View style={styles.stepRow}>
@@ -759,37 +786,12 @@ export default function CreateFlashcardScreen() {
             </View>
 
             {generatedPrompt !== "" && (
-              <>
-                <View style={styles.promptPreview}>
-                  <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
-                  <Text style={styles.promptPreviewText} numberOfLines={6}>
-                    {generatedPrompt}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.askAiBtn}
-                  onPress={() => setShowAISheet(true)}
-                  activeOpacity={0.85}
-                  disabled={aiLoading}
-                >
-                  <LinearGradient
-                    colors={["#10A37F", "#4285F4"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.askAiGrad}
-                  >
-                    {aiLoading ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <>
-                        <Text style={{ fontSize: 16 }}>🤖</Text>
-                        <Text style={styles.askAiBtnText}>Ask Your AI</Text>
-                        <Text style={{ fontSize: 13, color: "#fff" }}>⚡</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
+              <View style={styles.promptPreview}>
+                <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
+                <Text style={styles.promptPreviewText} numberOfLines={6}>
+                  {generatedPrompt}
+                </Text>
+              </View>
             )}
           </View>
         )}
@@ -1139,13 +1141,21 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 17,
   },
+  promptActionRow: {
+    flexDirection: "row", gap: 8, marginTop: 4,
+  },
   copyPromptBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 8, backgroundColor: Colors.primary,
     borderRadius: 12, paddingVertical: 13, marginTop: 4,
   },
+  copyPromptBtnSmall: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, backgroundColor: Colors.primary,
+    borderRadius: 12, paddingVertical: 13,
+  },
   copyPromptBtnDone: { backgroundColor: Colors.success },
-  copyPromptBtnText: { fontSize: 14, fontWeight: "900", color: Colors.white },
+  copyPromptBtnText: { fontSize: 13, fontWeight: "900", color: Colors.white },
   stepsGuide: { backgroundColor: Colors.background, borderRadius: 12, padding: 12, gap: 0 },
   promptPreview: {
     backgroundColor: "#1E1E2E", borderRadius: 10, padding: 12,
@@ -1302,10 +1312,10 @@ const styles = StyleSheet.create({
   },
   imgPickerText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
 
-  askAiBtn: { borderRadius: 14, overflow: "hidden", marginTop: 4 },
+  askAiBtn: { flex: 1, borderRadius: 12, overflow: "hidden" },
   askAiGrad: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 14, borderRadius: 14,
+    gap: 6, paddingVertical: 13, borderRadius: 12,
   },
-  askAiBtnText: { fontSize: 15, fontWeight: "900", color: "#fff" },
+  askAiBtnText: { fontSize: 13, fontWeight: "900", color: "#fff" },
 });

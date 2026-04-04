@@ -804,21 +804,47 @@ export default function CreateQuizScreen() {
               numberOfLines={3}
             />
 
-            {/* Copy Prompt Button */}
-            <TouchableOpacity
-              style={[styles.copyPromptBtn, promptCopied && styles.copyPromptBtnDone]}
-              onPress={handleGenerateAndCopyPrompt}
-              activeOpacity={0.85}
-            >
-              {promptCopied ? (
-                <Check size={16} color={Colors.white} />
-              ) : (
-                <Copy size={16} color={Colors.white} />
-              )}
-              <Text style={styles.copyPromptBtnText}>
-                {promptCopied ? "Prompt Tersalin!" : "Salin Prompt untuk AI"}
-              </Text>
-            </TouchableOpacity>
+            {/* Action buttons row */}
+            <View style={styles.promptActionRow}>
+              <TouchableOpacity
+                style={[styles.copyPromptBtnSmall, promptCopied && styles.copyPromptBtnDone]}
+                onPress={handleGenerateAndCopyPrompt}
+                activeOpacity={0.85}
+              >
+                {promptCopied ? (
+                  <Check size={14} color={Colors.white} />
+                ) : (
+                  <Copy size={14} color={Colors.white} />
+                )}
+                <Text style={styles.copyPromptBtnText}>
+                  {promptCopied ? "Tersalin!" : "Salin Prompt"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.askAiBtn}
+                onPress={() => setShowAISheet(true)}
+                activeOpacity={0.85}
+                disabled={aiLoading}
+              >
+                <LinearGradient
+                  colors={["#10A37F", "#4285F4"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.askAiGrad}
+                >
+                  {aiLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 14 }}>🤖</Text>
+                      <Text style={styles.askAiBtnText}>Ask Your AI</Text>
+                      <Text style={{ fontSize: 11, color: "#fff" }}>⚡</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
 
             {/* Step 2 & 3 instructions */}
             <View style={styles.stepsGuide}>
@@ -849,38 +875,14 @@ export default function CreateQuizScreen() {
 
             {/* Preview prompt */}
             {generatedPrompt !== "" && (
-              <>
-                <View style={styles.promptPreview}>
-                  <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
-                  <Text style={styles.promptPreviewText} numberOfLines={5}>
-                    {generatedPrompt}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.askAiBtn}
-                  onPress={() => setShowAISheet(true)}
-                  activeOpacity={0.85}
-                  disabled={aiLoading}
-                >
-                  <LinearGradient
-                    colors={["#10A37F", "#4285F4"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.askAiGrad}
-                  >
-                    {aiLoading ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <>
-                        <Text style={{ fontSize: 16 }}>🤖</Text>
-                        <Text style={styles.askAiBtnText}>Ask Your AI</Text>
-                        <Text style={{ fontSize: 13, color: "#fff" }}>⚡</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
+              <View style={styles.promptPreview}>
+                <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
+                <Text style={styles.promptPreviewText} numberOfLines={5}>
+                  {generatedPrompt}
+                </Text>
+              </View>
             )}
+
           </View>
         )}
       </View>
@@ -1351,6 +1353,9 @@ const styles = StyleSheet.create({
   diffBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   diffBtnText: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
   diffBtnTextActive: { color: Colors.white },
+  promptActionRow: {
+    flexDirection: "row", gap: 8, marginTop: 12,
+  },
   copyPromptBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1361,9 +1366,14 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     marginTop: 12,
   },
+  copyPromptBtnSmall: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, backgroundColor: Colors.primary,
+    borderRadius: 12, paddingVertical: 13,
+  },
   copyPromptBtnDone: { backgroundColor: Colors.success },
   copyPromptBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
     color: Colors.white,
   },
@@ -1696,10 +1706,10 @@ const styles = StyleSheet.create({
   modalCancelBtn: { alignItems: "center", paddingVertical: 8 },
   modalCancelText: { fontSize: 14, fontWeight: "700", color: Colors.textMuted },
 
-  askAiBtn: { borderRadius: 14, overflow: "hidden", marginTop: 4 },
+  askAiBtn: { flex: 1, borderRadius: 12, overflow: "hidden" },
   askAiGrad: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 14, borderRadius: 14,
+    gap: 6, paddingVertical: 13, borderRadius: 12,
   },
-  askAiBtnText: { fontSize: 15, fontWeight: "900", color: "#fff" },
+  askAiBtnText: { fontSize: 13, fontWeight: "900", color: "#fff" },
 });
