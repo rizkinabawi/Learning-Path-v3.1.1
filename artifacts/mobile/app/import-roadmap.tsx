@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -29,6 +30,9 @@ import {
 } from "@/utils/storage";
 import Colors from "@/constants/colors";
 import { toast } from "@/components/Toast";
+import { AIProviderSheet } from "@/components/AIProviderSheet";
+import { callAI } from "@/utils/ai-providers";
+import type { AIKey, AIProvider } from "@/utils/ai-keys";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -237,6 +241,8 @@ export default function ImportRoadmapScreen() {
   // Preview state
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showAISheet, setShowAISheet] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // ── Prompt builder ──────────────────────────────────────────────────────────
   const handleGeneratePrompt = async () => {
@@ -250,6 +256,33 @@ export default function ImportRoadmapScreen() {
     setPromptCopied(true);
     toast.success("Prompt disalin! Tempel ke ChatGPT / Gemini / Claude.");
     setTimeout(() => setPromptCopied(false), 3000);
+  };
+
+  const handleAskAI = async (provider: AIProvider, key: AIKey) => {
+    if (!generatedPrompt) return;
+    setAiLoading(true);
+    try {
+      const { content } = await callAI(provider, generatedPrompt, key.apiKey);
+      setJsonText(content);
+      setParseError(null);
+      setPreview(null);
+      setShowImport(true);
+      setShowAISheet(false);
+      toast.success("Respon AI berhasil dimuat! Tap Analisa untuk melihat preview.");
+    } catch (e: any) {
+      const msg = e?.message ?? "Terjadi kesalahan.";
+      if (msg.includes("Rate limit")) {
+        Alert.alert("AI Error", "Rate limit tercapai. Coba lagi nanti.");
+      } else if (msg.includes("tidak valid") || msg.includes("API key")) {
+        Alert.alert("AI Error", msg);
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        Alert.alert("Koneksi Error", "Periksa koneksi internet kamu.");
+      } else {
+        Alert.alert("AI Error", msg);
+      }
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   // ── JSON parse ──────────────────────────────────────────────────────────────
@@ -618,10 +651,35 @@ export default function ImportRoadmapScreen() {
             </TouchableOpacity>
 
             {!!generatedPrompt && (
-              <View style={styles.promptPreview}>
-                <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
-                <Text style={styles.promptPreviewText} numberOfLines={6}>{generatedPrompt}</Text>
-              </View>
+              <>
+                <View style={styles.promptPreview}>
+                  <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
+                  <Text style={styles.promptPreviewText} numberOfLines={6}>{generatedPrompt}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.askAiBtn}
+                  onPress={() => setShowAISheet(true)}
+                  activeOpacity={0.85}
+                  disabled={aiLoading}
+                >
+                  <LinearGradient
+                    colors={["#10A37F", "#4285F4"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.askAiGrad}
+                  >
+                    {aiLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 16 }}>🤖</Text>
+                        <Text style={styles.askAiBtnText}>Ask Your AI</Text>
+                        <Text style={{ fontSize: 13, color: "#fff" }}>⚡</Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         )}
@@ -756,6 +814,12 @@ export default function ImportRoadmapScreen() {
           </TouchableOpacity>
         </View>
       )}
+      <AIProviderSheet
+        visible={showAISheet}
+        loading={aiLoading}
+        onClose={() => { if (!aiLoading) setShowAISheet(false); }}
+        onSelect={handleAskAI}
+      />
     </KeyboardAwareScrollViewCompat>
   );
 }
@@ -932,4 +996,11 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: 15, fontWeight: "900", color: Colors.white },
   cancelPreviewBtn: { alignItems: "center", paddingVertical: 8 },
   cancelPreviewText: { fontSize: 13, fontWeight: "700", color: Colors.textMuted },
+
+  askAiBtn: { borderRadius: 14, overflow: "hidden", marginTop: 4 },
+  askAiGrad: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 14, borderRadius: 14,
+  },
+  askAiBtnText: { fontSize: 15, fontWeight: "900", color: "#fff" },
 });

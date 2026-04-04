@@ -9,7 +9,9 @@ import {
   Platform,
   Image,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -30,6 +32,9 @@ import {
 import Colors from "@/constants/colors";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "@/components/Toast";
+import { AIProviderSheet } from "@/components/AIProviderSheet";
+import { callAI } from "@/utils/ai-providers";
+import type { AIKey, AIProvider } from "@/utils/ai-keys";
 
 const IMAGE_DIR = (FileSystem.documentDirectory ?? "") + "flashcard-images/";
 
@@ -177,6 +182,8 @@ export default function CreateFlashcardScreen() {
   const [promptCustomNote, setPromptCustomNote] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState("");
+  const [showAISheet, setShowAISheet] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -476,6 +483,30 @@ export default function CreateFlashcardScreen() {
     setTimeout(() => setPromptCopied(false), 3000);
   };
 
+  const handleAskAI = async (provider: AIProvider, key: AIKey) => {
+    if (!generatedPrompt) return;
+    setAiLoading(true);
+    try {
+      const { content } = await callAI(provider, generatedPrompt, key.apiKey);
+      await processImportText(content);
+      setShowAISheet(false);
+      setShowImport(false);
+    } catch (e: any) {
+      const msg = e?.message ?? "Terjadi kesalahan.";
+      if (msg.includes("Rate limit")) {
+        Alert.alert("AI Error", "Rate limit tercapai. Coba lagi nanti.");
+      } else if (msg.includes("tidak valid") || msg.includes("API key")) {
+        Alert.alert("AI Error", msg);
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        Alert.alert("Koneksi Error", "Periksa koneksi internet kamu.");
+      } else {
+        Alert.alert("AI Error", msg);
+      }
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const difficulties = [
     { key: "easy", label: "Mudah" },
     { key: "medium", label: "Sedang" },
@@ -728,12 +759,37 @@ export default function CreateFlashcardScreen() {
             </View>
 
             {generatedPrompt !== "" && (
-              <View style={styles.promptPreview}>
-                <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
-                <Text style={styles.promptPreviewText} numberOfLines={6}>
-                  {generatedPrompt}
-                </Text>
-              </View>
+              <>
+                <View style={styles.promptPreview}>
+                  <Text style={styles.promptPreviewLabel}>Preview Prompt:</Text>
+                  <Text style={styles.promptPreviewText} numberOfLines={6}>
+                    {generatedPrompt}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.askAiBtn}
+                  onPress={() => setShowAISheet(true)}
+                  activeOpacity={0.85}
+                  disabled={aiLoading}
+                >
+                  <LinearGradient
+                    colors={["#10A37F", "#4285F4"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.askAiGrad}
+                  >
+                    {aiLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 16 }}>🤖</Text>
+                        <Text style={styles.askAiBtnText}>Ask Your AI</Text>
+                        <Text style={{ fontSize: 13, color: "#fff" }}>⚡</Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         )}
@@ -985,6 +1041,12 @@ export default function CreateFlashcardScreen() {
           </ScrollView>
         </View>
       )}
+      <AIProviderSheet
+        visible={showAISheet}
+        loading={aiLoading}
+        onClose={() => { if (!aiLoading) setShowAISheet(false); }}
+        onSelect={handleAskAI}
+      />
     </KeyboardAwareScrollViewCompat>
   );
 }
@@ -1239,4 +1301,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight, marginBottom: 4,
   },
   imgPickerText: { fontSize: 13, fontWeight: "700", color: Colors.primary },
+
+  askAiBtn: { borderRadius: 14, overflow: "hidden", marginTop: 4 },
+  askAiGrad: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 14, borderRadius: 14,
+  },
+  askAiBtnText: { fontSize: 15, fontWeight: "900", color: "#fff" },
 });
