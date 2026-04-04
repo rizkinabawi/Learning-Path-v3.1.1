@@ -1,0 +1,241 @@
+Mantap 🔥 ini upgrade yang penting banget: multi-provider + multi-key selector.
+Aku buatin PROMPT lanjutan yang bisa langsung kamu tempel ke Replit biar dia nambahin support:
+	•	OpenAI (GPT)
+	•	Gemini (Google)
+	•	Multi API key
+	•	User bisa pilih provider saat klik Ask Your AI
+
+⸻
+
+🚀 PROMPT REPLIT (MULTI PROVIDER + SELECTOR)
+
+You are a senior mobile app engineer.
+
+Enhance my existing mobile app (NO BACKEND) with multi-provider AI support.
+
+Current app already has:
+- Prompt Builder
+- Ask Your AI button
+- Popup review
+- Secure storage for API key
+
+Your task:
+Add support for MULTIPLE providers and MULTIPLE API keys per user.
+
+---
+
+FEATURE REQUIREMENTS:
+
+1. USER CAN STORE MULTIPLE API KEYS
+
+Each key must have:
+- id
+- provider ("openai" or "gemini")
+- apiKey
+
+Store them securely on device (secure storage).
+
+Example structure:
+[
+  { id: "1", provider: "openai", apiKey: "sk-xxx" },
+  { id: "2", provider: "gemini", apiKey: "xxx" }
+]
+
+---
+
+2. PROVIDER SELECTION BEFORE REQUEST
+
+When user clicks "Ask Your AI":
+- Show selector (dropdown/modal)
+- User chooses provider (OpenAI or Gemini)
+- Use corresponding API key
+
+DO NOT hardcode provider.
+
+---
+
+3. UNIFIED FUNCTION
+
+Create one main function:
+
+handleAskAI()
+
+Inside:
+- get selected provider
+- get matching API key
+- call correct provider API
+
+---
+
+4. OPENAI IMPLEMENTATION
+
+Endpoint:
+https://api.openai.com/v1/chat/completions
+
+Headers:
+Authorization: Bearer {apiKey}
+Content-Type: application/json
+
+Body:
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    { "role": "user", "content": promptState }
+  ]
+}
+
+Response:
+data.choices[0].message.content
+
+---
+
+5. GEMINI IMPLEMENTATION
+
+Endpoint:
+https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={apiKey}
+
+Method: POST
+
+Body:
+{
+  "contents": [
+    {
+      "parts": [
+        { "text": promptState }
+      ]
+    }
+  ]
+}
+
+Response:
+data.candidates[0].content.parts[0].text
+
+---
+
+6. NORMALIZE RESPONSE
+
+Create a function:
+
+normalizeResponse(provider, response)
+
+Return:
+{
+  content: "string"
+}
+
+---
+
+7. JSON PARSING
+
+Try:
+JSON.parse(content)
+
+If fail:
+- show alert "Invalid AI response format"
+
+---
+
+8. STATE
+
+Use:
+- promptState (already exists)
+- selectedProvider (new)
+- apiKeys (array)
+- resultState
+- loadingState
+
+---
+
+9. ERROR HANDLING
+
+- No API key for selected provider → alert
+- Invalid key → alert
+- Network error → alert
+
+---
+
+10. IMPORTANT
+
+- DO NOT modify UI layout
+- ONLY add logic
+- Keep everything client-side
+- Clean modular code
+
+Functions to implement:
+- getApiKeys()
+- getApiKeyByProvider(provider)
+- callOpenAI(prompt, apiKey)
+- callGemini(prompt, apiKey)
+- normalizeResponse(provider, response)
+- handleAskAI()
+
+---
+
+11. UX DETAIL
+
+If user has multiple keys:
+- Allow switching provider easily
+
+If no key:
+- show "Please add API key first"
+
+---
+
+OUTPUT:
+Clean, production-ready code only.
+
+
+⸻
+
+🧠 Tambahan Penting (WAJIB kamu masukin ke Prompt Builder)
+
+Supaya GPT & Gemini konsisten output JSON:
+
+Return ONLY valid JSON.
+No explanation.
+No extra text.
+
+
+⸻
+
+🔥 Hasil Akhir App Kamu
+
+Nanti flow jadi:
+	1.	User simpan:
+	•	GPT key
+	•	Gemini key
+	2.	Klik Ask Your AI
+	3.	Pilih:
+	•	GPT / Gemini
+	4.	Request dikirim sesuai provider
+	5.	Output masuk ke popup review (yang udah ada)
+
+⸻
+
+⚡ Insight penting
+
+Ini bikin app kamu:
+
+👉 bukan cuma AI app
+👉 tapi jadi AI Hub / AI Router (BYOK)
+
+Mirip konsep:
+	•	Poe
+	•	TypingMind
+
+Tapi versi kamu:
+👉 fokus ke auto content generator (flashcard, course, quiz) 💰
+
+⸻
+
+Mau next upgrade?
+
+Kalau kamu lanjut, ini step berikutnya yang powerful:
+	•	🔁 Auto fallback (kalau GPT error → pindah ke Gemini)
+	•	⚡ Streaming response
+	•	🧠 Smart prompt optimizer
+	•	📊 Token usage tracker (BYOK friendly)
+
+Tinggal bilang:
+
+👉 “lanjut auto fallback + smart routing”
