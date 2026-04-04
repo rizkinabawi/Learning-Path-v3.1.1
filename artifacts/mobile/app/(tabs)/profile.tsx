@@ -130,6 +130,12 @@ export default function ProfileTab() {
       onPress: () => router.push("/edit-profile"),
     },
     {
+      icon: "key" as const, label: "AI Keys",
+      sub: "Simpan API key OpenAI & Gemini untuk Ask Your AI",
+      color: "#10A37F",
+      onPress: () => router.push("/ai-keys"),
+    },
+    {
       icon: "package" as const, label: "Pack Manager",
       sub: "Kelola pack flashcard & quiz kamu",
       color: "#8B5CF6",

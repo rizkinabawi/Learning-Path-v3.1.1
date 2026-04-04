@@ -25,6 +25,9 @@ import {
 import Colors, { shadow, shadowSm } from "@/constants/colors";
 import { toast } from "@/components/Toast";
 import { isCancellationError } from "@/utils/safe-share";
+import { AIProviderSheet } from "@/components/AIProviderSheet";
+import { callAI } from "@/utils/ai-providers";
+import type { AIKey, AIProvider } from "@/utils/ai-keys";
 
 const { width } = Dimensions.get("window");
 
@@ -201,6 +204,9 @@ export const PromptBuilder = () => {
   const [selLesson, setSelLesson] = useState<Lesson | null>(null);
   const [pickerStep, setPickerStep] = useState<"course" | "module" | "lesson" | null>(null);
 
+  const [showProviderSheet, setShowProviderSheet] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+
   useEffect(() => {
     getLearningPaths().then(setCourses);
   }, []);
@@ -271,6 +277,96 @@ export const PromptBuilder = () => {
     await Clipboard.setStringAsync(prompt);
     setLoading(false);
     toast.success("Prompt tersalin ke clipboard!");
+  };
+
+  const handleAskAI = async (provider: AIProvider, key: AIKey) => {
+    if (!generatedPrompt) return;
+    setAiLoading(true);
+    try {
+      const { content } = await callAI(provider, generatedPrompt, key.apiKey);
+      const raw = JSON.parse(extractJson(content));
+
+      let result: LearningJsonOutput;
+      if (Array.isArray(raw)) {
+        const first = raw[0] ?? {};
+        const isQuiz = "options" in first;
+        if (isQuiz) {
+          result = {
+            type: "quiz",
+            topic: topic.trim() || "AI Generate",
+            difficulty,
+            items: raw.map((item: any) => ({
+              question: item.question ?? "",
+              options: Array.isArray(item.options) ? item.options.map(String) : [],
+              correct_answer: item.correct_answer ?? item.answer ?? "",
+              explanation: item.explanation ?? "",
+            })),
+          };
+        } else {
+          result = {
+            type: "flashcard",
+            topic: topic.trim() || "AI Generate",
+            difficulty,
+            items: raw.map((item: any) => ({
+              question: item.question ?? item.front ?? "",
+              answer: item.answer ?? item.back ?? "",
+              tag: item.tag ?? "",
+            })),
+          };
+        }
+      } else if (raw && Array.isArray(raw.items)) {
+        const isQuizWrapped = raw.type === "quiz";
+        const normalizedItems = raw.items.map((item: any) => {
+          if (!isQuizWrapped) {
+            return {
+              question: item.question ?? item.front ?? "",
+              answer: item.answer ?? item.back ?? "",
+              tag: item.tag ?? "",
+            };
+          }
+          return {
+            question: item.question ?? "",
+            options: Array.isArray(item.options) ? item.options.map(String) : [],
+            correct_answer: item.correct_answer ?? item.answer ?? "",
+            explanation: item.explanation ?? "",
+          };
+        });
+        result = {
+          type: isQuizWrapped ? "quiz" : "flashcard",
+          topic: raw.topic ?? topic.trim() || "AI Generate",
+          difficulty: raw.difficulty ?? difficulty,
+          items: normalizedItems,
+        } as LearningJsonOutput;
+      } else {
+        throw new Error("Format tidak dikenali");
+      }
+
+      if (!result.items || result.items.length === 0) {
+        throw new Error("Tidak ada item ditemukan");
+      }
+
+      setImportedJson(result);
+      setShowProviderSheet(false);
+      setActiveTab("share");
+      toast.success(`${result.items.length} item berhasil digenerate!`);
+    } catch (e: any) {
+      const msg: string = e?.message ?? "";
+      setShowProviderSheet(false);
+      if (msg.includes("tidak valid") || msg.includes("Rate limit") || msg.includes("Kuota")) {
+        Alert.alert("AI Error", msg);
+      } else if (msg === "Format tidak dikenali" || msg === "Tidak ada item ditemukan") {
+        Alert.alert(
+          "Format Tidak Dikenali",
+          "AI tidak mengembalikan JSON yang valid. Coba generate ulang atau periksa API key."
+        );
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        Alert.alert("Koneksi Gagal", "Periksa koneksi internet kamu.");
+      } else {
+        Alert.alert("Gagal", msg || "Terjadi kesalahan tak terduga.");
+      }
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleCopyPrompt = async () => {
@@ -676,6 +772,30 @@ export const PromptBuilder = () => {
                   <Feather name="share-2" size={15} color={Colors.primary} />
                 </TouchableOpacity>
               </View>
+              {/* Ask AI Button */}
+              <TouchableOpacity
+                onPress={() => setShowProviderSheet(true)}
+                style={styles.askAiBtn}
+                activeOpacity={0.85}
+                disabled={aiLoading}
+              >
+                <LinearGradient
+                  colors={["#10A37F", "#4285F4"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.askAiGrad}
+                >
+                  {aiLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 16 }}>🤖</Text>
+                      <Text style={styles.askAiBtnText}>Ask Your AI</Text>
+                      <Feather name="zap" size={14} color="#fff" />
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -880,6 +1000,13 @@ export const PromptBuilder = () => {
           onSelect={(l) => { setSelLesson(l); setPickerStep(null); }}
           onClose={() => setPickerStep(null)} onBack={() => setPickerStep("module")} />
       )}
+
+      <AIProviderSheet
+        visible={showProviderSheet}
+        loading={aiLoading}
+        onClose={() => { if (!aiLoading) setShowProviderSheet(false); }}
+        onSelect={(provider, key) => handleAskAI(provider, key)}
+      />
     </View>
   );
 };
@@ -1027,6 +1154,25 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.primary,
     backgroundColor: Colors.primaryLight,
+  },
+  askAiBtn: {
+    borderRadius: 14,
+    overflow: "hidden",
+    marginTop: 6,
+  },
+  askAiGrad: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  askAiBtnText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#fff",
+    letterSpacing: 0.3,
   },
 
   jsonBox: {
