@@ -94,7 +94,8 @@ function YoutubeEmbed({ url }: { url: string }) {
     );
   }
 
-  const embedUrl = `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0&modestbranding=1&enablejsapi=1`;
+  // Use youtube-nocookie.com to reduce cookie/auth prompts that can trigger app opening
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https://www.youtube-nocookie.com`;
 
   if ((Platform.OS as string) === "web") {
     return (
@@ -113,8 +114,9 @@ function YoutubeEmbed({ url }: { url: string }) {
     );
   }
 
-  // Use inline HTML to avoid YouTube Error 153 in Android WebView.
-  // Loading embed URL directly causes Error 153; injecting via html source bypasses it.
+  // Android: Use inline HTML to avoid YouTube Error 153 and prevent YouTube app from
+  // intercepting playback. setSupportMultipleWindows=false + onShouldStartLoadWithRequest
+  // intercepts intent:// and vnd.youtube:// schemes that trigger the native app.
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -143,7 +145,7 @@ function YoutubeEmbed({ url }: { url: string }) {
   return (
     <View style={ytStyles.container}>
       <WebView
-        source={{ html, baseUrl: "https://www.youtube.com" }}
+        source={{ html, baseUrl: "https://www.youtube-nocookie.com" }}
         style={{ width: PLAYER_WIDTH, height: PLAYER_HEIGHT, borderRadius: 12, backgroundColor: "#000" }}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
@@ -153,6 +155,21 @@ function YoutubeEmbed({ url }: { url: string }) {
         scrollEnabled={false}
         allowsFullscreenVideo
         originWhitelist={["*"]}
+        setSupportMultipleWindows={false}
+        onShouldStartLoadWithRequest={(req) => {
+          const u = req.url;
+          // Block intent:// and vnd.youtube:// schemes — these open the YouTube app
+          if (
+            u.startsWith("intent://") ||
+            u.startsWith("vnd.youtube") ||
+            u.startsWith("youtube://") ||
+            u.startsWith("market://")
+          ) {
+            return false;
+          }
+          // Allow youtube-nocookie, googlevideo (CDN), and blank/about pages
+          return true;
+        }}
       />
       <TouchableOpacity
         style={ytStyles.openBtn}
