@@ -333,7 +333,7 @@ export const PromptBuilder = () => {
         });
         result = {
           type: isQuizWrapped ? "quiz" : "flashcard",
-          topic: raw.topic ?? topic.trim() || "AI Generate",
+          topic: (raw.topic ?? topic.trim()) || "AI Generate",
           difficulty: raw.difficulty ?? difficulty,
           items: normalizedItems,
         } as LearningJsonOutput;
