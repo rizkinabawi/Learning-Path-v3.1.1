@@ -4,6 +4,7 @@ import {
   Modal, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView, Alert,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "@/utils/fs-compat";
@@ -12,6 +13,11 @@ import {
   saveStandaloneCollection, STANDALONE_COLLECTION_PREFIX,
   type LearningPath, type Module, type Lesson, type Quiz,
 } from "@/utils/storage";
+import {
+  getApiKeys, PROVIDER_META,
+  type AIKey, type AIProvider,
+} from "@/utils/ai-keys";
+import { callAI } from "@/utils/ai-providers";
 import Colors, { shadowSm } from "@/constants/colors";
 import { toast } from "@/components/Toast";
 
@@ -173,6 +179,9 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
   const [promptCustomNote, setPromptCustomNote] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState("");
+  const [showAISheet, setShowAISheet] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiKeys, setAiKeys] = useState<AIKey[]>([]);
 
   // Collection name (when saving standalone without a lesson)
   const [collectionName, setCollectionName] = useState("");
@@ -185,6 +194,7 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
     if (!visible) return;
     reset();
     getLearningPaths().then(setCourses);
+    getApiKeys().then(setAiKeys);
   }, [visible]);
 
   useEffect(() => {
@@ -206,6 +216,26 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
     setPromptTopic(""); setPromptCount("10"); setPromptDifficulty("medium");
     setPromptLanguage("Bahasa Indonesia"); setPromptCustomNote(""); setGeneratedPrompt(""); setPromptCopied(false);
     setImportJson("");
+    setShowAISheet(false); setAiLoading(false);
+  };
+
+  const handleAskAI = async (provider: AIProvider, key: AIKey) => {
+    if (!promptTopic.trim()) { toast.error("Isi topik terlebih dahulu"); return; }
+    const count = parseInt(promptCount) || 10;
+    const prompt = buildQuizPrompt(promptTopic.trim(), count, promptDifficulty, promptLanguage, promptCustomNote);
+    setGeneratedPrompt(prompt);
+    setShowAISheet(false);
+    setAiLoading(true);
+    try {
+      const { content } = await callAI(provider, prompt, key.apiKey, key.model);
+      await processImport(content);
+    } catch (e: any) {
+      const msg = e?.message ?? "Terjadi kesalahan.";
+      if (msg.includes("Rate limit")) Alert.alert("AI Error", "Rate limit tercapai. Coba lagi nanti atau ganti model.");
+      else if (msg.includes("tidak valid") || msg.includes("API key")) Alert.alert("AI Error", msg);
+      else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) Alert.alert("Koneksi Error", "Periksa koneksi internet kamu.");
+      else Alert.alert("AI Error", msg);
+    } finally { setAiLoading(false); }
   };
 
   const updateOption = (i: number, val: string) => setOptions((prev) => { const next = [...prev]; next[i] = val; return next; });
@@ -444,16 +474,48 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
                   <Text style={s.label}>Catatan Tambahan (opsional)</Text>
                   <TextInput style={[s.input, { minHeight: 60 }]} multiline placeholder="Contoh: buat soal analisis kasus, gunakan contoh Indonesia" placeholderTextColor={Colors.textMuted} value={promptCustomNote} onChangeText={setPromptCustomNote} textAlignVertical="top" />
 
+                  {/* Action buttons row */}
+                  <View style={s.aiActionRow}>
+                    <TouchableOpacity
+                      style={[s.copyPromptBtn, { backgroundColor: promptCopied ? Colors.success : QUIZ_COLOR }]}
+                      onPress={handleGeneratePrompt}
+                      activeOpacity={0.85}
+                      disabled={aiLoading}
+                    >
+                      <Feather name={promptCopied ? "check" : "copy"} size={14} color="#fff" />
+                      <Text style={s.copyPromptBtnText}>{promptCopied ? "Tersalin!" : "Salin Prompt"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.askAiBtn}
+                      onPress={() => setShowAISheet(true)}
+                      activeOpacity={0.85}
+                      disabled={aiLoading}
+                    >
+                      <LinearGradient
+                        colors={["#10A37F", "#4285F4"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={s.askAiGrad}
+                      >
+                        {aiLoading ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <>
+                            <Text style={{ fontSize: 13 }}>🤖</Text>
+                            <Text style={s.askAiBtnText}>Ask Your AI</Text>
+                            <Text style={{ fontSize: 10, color: "#fff" }}>⚡</Text>
+                          </>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+
                   {generatedPrompt.length > 0 && (
                     <View style={[s.promptPreview, { borderLeftColor: QUIZ_COLOR }]}>
-                      <Text style={s.promptPreviewText} numberOfLines={6}>{generatedPrompt}</Text>
+                      <Text style={s.promptPreviewText} numberOfLines={5}>{generatedPrompt}</Text>
                     </View>
                   )}
 
-                  <TouchableOpacity style={[s.saveBtn, { backgroundColor: promptCopied ? Colors.success : QUIZ_COLOR }]} onPress={handleGeneratePrompt}>
-                    <Feather name={promptCopied ? "check" : "copy"} size={18} color="#fff" />
-                    <Text style={s.saveBtnText}>{promptCopied ? "Tersalin! Tempel ke AI-mu" : "Generate & Salin Prompt"}</Text>
-                  </TouchableOpacity>
                   {promptCopied && (
                     <TouchableOpacity style={[s.secondaryBtn, { borderColor: QUIZ_COLOR, backgroundColor: QUIZ_LIGHT }]} onPress={() => setActiveTab("import")}>
                       <Feather name="download" size={16} color={QUIZ_COLOR} />
@@ -516,6 +578,48 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
         {pickerStep === "lesson" && selModule && (
           <PickerSheet title={`Pelajaran di "${selModule.name}"`} items={lessons} getLabel={(l) => l.name} getSub={(l) => l.description}
             onSelect={(l) => { setSelLesson(l); setPickerStep(null); }} onClose={() => setPickerStep(null)} onBack={() => setPickerStep("module")} />
+        )}
+
+        {/* Inline AI Provider Picker */}
+        {showAISheet && (
+          <View style={s.aiOverlay}>
+            <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => { if (!aiLoading) setShowAISheet(false); }} />
+            <View style={s.aiSheet}>
+              <View style={s.handle} />
+              <View style={s.header}>
+                <Text style={s.title}>Pilih AI Provider</Text>
+                <TouchableOpacity style={s.closeBtn} onPress={() => { if (!aiLoading) setShowAISheet(false); }}>
+                  <Feather name="x" size={18} color={Colors.dark} />
+                </TouchableOpacity>
+              </View>
+              <Text style={[s.label, { color: Colors.textMuted, fontWeight: "500", marginBottom: 12 }]}>
+                {aiKeys.length === 0 ? "Belum ada API key. Tambahkan di menu AI Keys." : "Pilih provider untuk generate soal otomatis."}
+              </Text>
+              {(["openai", "gemini"] as AIProvider[]).map((prov) => {
+                const meta = PROVIDER_META[prov];
+                const key = aiKeys.find((k) => k.provider === prov) ?? null;
+                return (
+                  <TouchableOpacity
+                    key={prov}
+                    style={[s.aiProvCard, { borderColor: key ? meta.color + "50" : Colors.border, opacity: key ? 1 : 0.5 }]}
+                    activeOpacity={key ? 0.75 : 1}
+                    onPress={() => { if (key) handleAskAI(prov, key); }}
+                  >
+                    <View style={[s.aiProvIcon, { backgroundColor: meta.bg }]}>
+                      <Text style={{ fontSize: 20 }}>{prov === "openai" ? "⚡" : "✨"}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "800", color: Colors.dark }}>{meta.label}</Text>
+                      <Text style={{ fontSize: 11, color: Colors.textMuted, fontWeight: "500" }}>
+                        {key ? key.model : "Belum ada key"}
+                      </Text>
+                    </View>
+                    {key && <Feather name="chevron-right" size={18} color={meta.color} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
         )}
       </View>
     </Modal>
@@ -583,6 +687,18 @@ const s = StyleSheet.create({
   importBtnRow: { flexDirection: "row", gap: 10, marginTop: 8 },
   outlineBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 16, paddingVertical: 15, backgroundColor: Colors.primaryLight },
   outlineBtnText: { fontSize: 14, fontWeight: "800", color: Colors.primary },
+  // AI action row
+  aiActionRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  copyPromptBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 14, paddingVertical: 13 },
+  copyPromptBtnText: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  askAiBtn: { flex: 1, borderRadius: 14, overflow: "hidden" },
+  askAiGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13, borderRadius: 14 },
+  askAiBtnText: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  // Inline AI provider overlay
+  aiOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end", zIndex: 20 },
+  aiSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: 32 },
+  aiProvCard: { flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderRadius: 16, padding: 14, marginBottom: 10, backgroundColor: Colors.background },
+  aiProvIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
 });
 
 const ps = StyleSheet.create({
