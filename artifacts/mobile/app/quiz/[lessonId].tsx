@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X, ChevronRight, Check, Plus, RotateCcw } from "lucide-react-native";
 import { Feather } from "@expo/vector-icons";
+import { AdBanner } from "@/components/AdBanner";
 import * as Haptics from "expo-haptics";
 import {
   getQuizzes,
@@ -226,6 +227,7 @@ export default function QuizScreen() {
           value={achievementValue}
           onClose={() => setShowAchievement(false)}
         />
+        <AdBanner size="adaptiveBanner" style={{ marginTop: 16, width: "100%" }} />
       </View>
     );
   }

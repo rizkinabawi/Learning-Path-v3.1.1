@@ -1,50 +1,11 @@
 /**
  * AdBanner — Google AdMob Banner Component
+ * Supports: Banner, LargeBanner, AnchoredAdaptiveBanner
  *
- * ══════════════════════════════════════════════════════════════════
- * STATUS: MOCK (iklan palsu) — lihat panduan di bawah untuk aktifkan
- * ══════════════════════════════════════════════════════════════════
- *
- * CARA AKTIFKAN IKLAN NYATA (4 Langkah):
- *
- * LANGKAH 1 — Daftar & Setup AdMob Console
- *   → Buka https://admob.google.com
- *   → Login dengan Google Account
- *   → Klik "Tambahkan Aplikasi" → pilih Android atau iOS
- *   → Isi nama app & store (Google Play / App Store)
- *   → Salin "ID Aplikasi" (format: ca-app-pub-XXXXXXXX~XXXXXXXXXX)
- *
- * LANGKAH 2 — Buat Ad Unit (Banner)
- *   → Di sidebar klik "Unit Iklan" → "Tambah Unit Iklan"
- *   → Pilih tipe "Banner"
- *   → Salin "ID Unit Iklan" (format: ca-app-pub-XXXXXXXX/XXXXXXXXXX)
- *
- * LANGKAH 3 — Isi ID di app.json
- *   Di app.json, tambahkan/ganti bagian ini:
- *
- *   "plugins": [
- *     ...,
- *     ["react-native-google-mobile-ads", {
- *       "androidAppId": "ca-app-pub-XXXXXXXX~XXXXXXXXXX",   ← App ID Android
- *       "iosAppId": "ca-app-pub-XXXXXXXX~XXXXXXXXXX"        ← App ID iOS
- *     }]
- *   ]
- *
- *   Dan tambahkan di .env atau Replit Secrets:
- *     EXPO_PUBLIC_ADMOB_BANNER_ANDROID=ca-app-pub-XXXXXXXX/XXXXXXXXXX
- *     EXPO_PUBLIC_ADMOB_BANNER_IOS=ca-app-pub-XXXXXXXX/XXXXXXXXXX
- *
- * LANGKAH 4 — Aktifkan kode nyata di bawah
- *   1. Install package:
- *      pnpm --filter @workspace/mobile add react-native-google-mobile-ads
- *   2. Uncomment blok "PRODUCTION CODE" di bawah
- *   3. Comment blok "MOCK CODE" di bawah
- *   4. Build ulang dengan EAS: eas build --platform android
- *
- * CATATAN PENTING:
- *   • Iklan TIDAK bisa tampil di Expo Go — harus EAS Build / APK
- *   • Gunakan TestIds.BANNER saat __DEV__ agar tidak melanggar kebijakan AdMob
- *   • Proses review AdMob bisa 1–7 hari setelah app tayang di store
+ * • Di Expo Go → tampil MockBanner (native module tidak tersedia)
+ * • Di EAS Build (dev/preview/production) → tampil iklan nyata
+ *   - __DEV__ build → Google Test Ads (tidak melanggar kebijakan)
+ *   - production build → Iklan nyata dari AdMob
  */
 
 import React, { useState, useEffect } from "react";
@@ -56,43 +17,55 @@ import {
   Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import Colors from "@/constants/colors";
 
-// ─── ID Unit Iklan ────────────────────────────────────────────────────────────
-// Isi setelah dapat dari AdMob Console (Langkah 2)
-const BANNER_ANDROID = process.env.EXPO_PUBLIC_ADMOB_BANNER_ANDROID ?? "";
-const BANNER_IOS     = process.env.EXPO_PUBLIC_ADMOB_BANNER_IOS ?? "";
-const BANNER_UNIT_ID = Platform.OS === "ios" ? BANNER_IOS : BANNER_ANDROID;
+// ─── Ad Unit IDs ──────────────────────────────────────────────────────────────
+const REAL_BANNER_ANDROID = "ca-app-pub-9450003707454763/5034353375";
+const REAL_BANNER_IOS     = "ca-app-pub-9450003707454763/5034353375"; // ganti saat ada iOS unit
 
-// Set true kalau sudah install react-native-google-mobile-ads & dapat ID
-const ADS_ENABLED = false;
+// ─── Runtime detection ────────────────────────────────────────────────────────
+// Expo Go tidak bisa jalankan native modules (react-native-google-mobile-ads)
+const isExpoGo = Constants.appOwnership === "expo";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PRODUCTION CODE (uncomment saat ADS_ENABLED = true)
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// import {
-//   BannerAd,
-//   BannerAdSize,
-//   TestIds,
-// } from "react-native-google-mobile-ads";
-//
-// const adUnitId = __DEV__ ? TestIds.BANNER : BANNER_UNIT_ID;
-//
-// function RealBannerAd() {
-//   return (
-//     <BannerAd
-//       unitId={adUnitId}
-//       size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-//       requestOptions={{ requestNonPersonalizedAdsOnly: true }}
-//     />
-//   );
-// }
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK CODE (hapus/comment saat sudah pakai production code)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Lazy-load AdMob (hanya di native build, agar Expo Go tidak crash) ───────
+let BannerAdComponent: any = null;
+let BannerAdSize: any = null;
+let TestIds: any = null;
 
+if (!isExpoGo && Platform.OS !== "web") {
+  try {
+    const admob = require("react-native-google-mobile-ads");
+    BannerAdComponent = admob.BannerAd;
+    BannerAdSize      = admob.BannerAdSize;
+    TestIds           = admob.TestIds;
+  } catch {
+    // Native module belum tersedia (custom dev build yang belum include admob)
+  }
+}
+
+// ─── Real Banner Ad ───────────────────────────────────────────────────────────
+function RealBannerAd({ size }: { size: "banner" | "largeBanner" | "adaptiveBanner" }) {
+  if (!BannerAdComponent || !BannerAdSize || !TestIds) return null;
+
+  const unitId = __DEV__
+    ? TestIds.ADAPTIVE_BANNER
+    : Platform.OS === "ios" ? REAL_BANNER_IOS : REAL_BANNER_ANDROID;
+
+  const adSize = size === "largeBanner"
+    ? BannerAdSize.LARGE_BANNER
+    : BannerAdSize.ANCHORED_ADAPTIVE_BANNER;
+
+  return (
+    <BannerAdComponent
+      unitId={unitId}
+      size={adSize}
+      requestOptions={{ requestNonPersonalizedAdsOnly: true }}
+    />
+  );
+}
+
+// ─── Mock Banner (Expo Go / Web / dev fallback) ───────────────────────────────
 const MOCK_ADS = [
   { label: "Belajar lebih cepat dengan AI", cta: "Coba Gratis", color: "#4C6FFF" },
   { label: "Flashcard & Quiz tersedia 24/7", cta: "Mulai Sekarang", color: "#7C3AED" },
@@ -113,24 +86,22 @@ function MockBannerAd({ size = "banner" }: { size?: string }) {
   if (dismissed) return null;
 
   const ad = MOCK_ADS[adIndex];
-  const bannerHeight = size === "banner" ? 50 : size === "largeBanner" ? 100 : 250;
+  const bannerHeight = size === "largeBanner" ? 100 : 50;
 
   return (
-    <View style={[styles.container, { height: bannerHeight }, size === "mediumRectangle" && styles.mrec]}>
-      <View style={styles.badge}>
-        <Text style={styles.badgeText}>Ad</Text>
-      </View>
-      <View style={styles.content}>
+    <View style={[s.mockContainer, { height: bannerHeight }]}>
+      <View style={s.badge}><Text style={s.badgeText}>Ad</Text></View>
+      <View style={s.content}>
         <Feather name="zap" size={14} color={ad.color} style={{ marginRight: 6 }} />
-        <Text style={styles.adText} numberOfLines={1}>{ad.label}</Text>
+        <Text style={s.adText} numberOfLines={1}>{ad.label}</Text>
       </View>
-      <TouchableOpacity style={[styles.ctaBtn, { borderColor: ad.color }]} activeOpacity={0.75}>
-        <Text style={[styles.ctaText, { color: ad.color }]}>{ad.cta}</Text>
+      <TouchableOpacity style={[s.ctaBtn, { borderColor: ad.color }]} activeOpacity={0.75}>
+        <Text style={[s.ctaText, { color: ad.color }]}>{ad.cta}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         onPress={() => setDismissed(true)}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        style={styles.dismissBtn}
+        style={s.dismissBtn}
         activeOpacity={0.7}
       >
         <Feather name="x" size={12} color={Colors.textMuted} />
@@ -139,32 +110,29 @@ function MockBannerAd({ size = "banner" }: { size?: string }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Export utama — otomatis beralih antara mock dan real
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─── Public component ─────────────────────────────────────────────────────────
 interface AdBannerProps {
-  size?: "banner" | "largeBanner" | "mediumRectangle";
+  size?: "banner" | "largeBanner" | "adaptiveBanner";
   style?: object;
 }
 
-export function AdBanner({ size = "banner", style }: AdBannerProps) {
-  // Web tidak mendukung AdMob
+export function AdBanner({ size = "adaptiveBanner", style }: AdBannerProps) {
   if (Platform.OS === "web") return null;
 
-  // Kalau ADS_ENABLED = true dan ada ID → pakai iklan nyata
-  // if (ADS_ENABLED && BANNER_UNIT_ID) return <RealBannerAd />;
+  const canShowRealAds = !isExpoGo && BannerAdComponent !== null;
 
-  // Default: tampilkan mock
   return (
     <View style={style}>
-      <MockBannerAd size={size} />
+      {canShowRealAds
+        ? <RealBannerAd size={size} />
+        : <MockBannerAd size={size} />
+      }
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
+const s = StyleSheet.create({
+  mockContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: Colors.white,
@@ -175,14 +143,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     gap: 8,
     width: "100%",
-  },
-  mrec: {
-    flexDirection: "column",
-    justifyContent: "center",
-    gap: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderTopWidth: 1,
   },
   badge: {
     backgroundColor: "#F0F4FF",

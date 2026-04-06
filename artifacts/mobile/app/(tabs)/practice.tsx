@@ -12,6 +12,7 @@ import {
 } from "@/utils/storage";
 import Colors, { shadow, shadowSm, CARD_GRADIENTS } from "@/constants/colors";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { AdBanner } from "@/components/AdBanner";
 
 export default function PracticeTab() {
   const router = useRouter();
@@ -120,6 +121,8 @@ export default function PracticeTab() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <AdBanner size="adaptiveBanner" style={{ marginTop: 8, marginBottom: 4 }} />
 
         {/* Kursus untuk latihan */}
         {paths.length > 0 && (

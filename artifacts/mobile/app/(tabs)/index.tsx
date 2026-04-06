@@ -453,7 +453,7 @@ export default function Dashboard() {
       </ScrollView>
 
       {/* AdMob Banner — fixed di bagian bawah layar */}
-      <AdBanner size="banner" />
+      <AdBanner size="adaptiveBanner" />
     </View>
   );
 }

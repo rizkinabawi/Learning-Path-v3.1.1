@@ -39,6 +39,15 @@
           "savePhotosPermission": "Allow LearningPath to save files to your storage.",
           "isAccessMediaLocationEnabled": true
         }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-9450003707454763~4154514413",
+          "iosAppId": "ca-app-pub-9450003707454763~4154514413",
+          "userTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
+          "skAdNetworkItems": []
+        }
       ]
     ],
     "experiments": {
