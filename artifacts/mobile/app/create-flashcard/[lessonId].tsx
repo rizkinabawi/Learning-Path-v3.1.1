@@ -492,16 +492,13 @@ export default function CreateFlashcardScreen() {
       setShowAISheet(false);
       setShowImport(false);
     } catch (e: any) {
-      const msg = e?.message ?? "Terjadi kesalahan.";
-      if (msg.includes("Rate limit")) {
-        Alert.alert("AI Error", "Rate limit tercapai. Coba lagi nanti.");
-      } else if (msg.includes("tidak valid") || msg.includes("API key")) {
-        Alert.alert("AI Error", msg);
-      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
-        Alert.alert("Koneksi Error", "Periksa koneksi internet kamu.");
-      } else {
-        Alert.alert("AI Error", msg);
-      }
+      const msg: string = e?.message ?? "Terjadi kesalahan. Coba lagi.";
+      const title = msg.toLowerCase().includes("koneksi") || msg.toLowerCase().includes("internet")
+        ? "Koneksi Error"
+        : msg.toLowerCase().includes("kuota") || msg.toLowerCase().includes("kredit")
+        ? "Kuota Habis"
+        : "AI Error";
+      Alert.alert(title, msg);
     } finally {
       setAiLoading(false);
     }
