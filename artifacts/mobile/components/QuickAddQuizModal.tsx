@@ -228,7 +228,7 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
     setAiLoading(true);
     try {
       const { content } = await callAI(provider, prompt, key.apiKey, key.model);
-      await processImport(content);
+      await processImport(content, true);
     } catch (e: any) {
       const msg = e?.message ?? "Terjadi kesalahan.";
       if (msg.includes("Rate limit")) Alert.alert("AI Error", "Rate limit tercapai. Coba lagi nanti atau ganti model.");
@@ -286,7 +286,7 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
     setTimeout(() => setPromptCopied(false), 3000);
   };
 
-  const processImport = async (rawText: string) => {
+  const processImport = async (rawText: string, skipConfirm = false) => {
     setImporting(true);
     try {
       const parsed = JSON.parse(extractJson(rawText));
@@ -296,9 +296,11 @@ export function QuickAddQuizModal({ visible, onClose, onSaved }: Props) {
         Alert.alert("Tidak Ada Soal Valid", 'Pastikan JSON memiliki field "question", "options" (array), dan "correct_answer".');
         setImporting(false); return;
       }
-      const dest = selLesson ? `"${selLesson.name}"` : `koleksi baru${collectionName.trim() ? ` "${collectionName.trim()}"` : ""}`;
-      const ok = await new Promise<boolean>((res) => Alert.alert("Konfirmasi Import", `Import ${valid.length} soal ke ${dest}?`, [{ text: "Batal", style: "cancel", onPress: () => res(false) }, { text: "Import", onPress: () => res(true) }]));
-      if (!ok) { setImporting(false); return; }
+      if (!skipConfirm) {
+        const dest = selLesson ? `"${selLesson.name}"` : `koleksi baru${collectionName.trim() ? ` "${collectionName.trim()}"` : ""}`;
+        const ok = await new Promise<boolean>((res) => Alert.alert("Konfirmasi Import", `Import ${valid.length} soal ke ${dest}?`, [{ text: "Batal", style: "cancel", onPress: () => res(false) }, { text: "Import", onPress: () => res(true) }]));
+        if (!ok) { setImporting(false); return; }
+      }
       const lessonId = await resolveTargetId(`Koleksi ${valid.length} Soal`);
       for (const item of valid) {
         const { opts, answer } = resolveAnswer(item);
