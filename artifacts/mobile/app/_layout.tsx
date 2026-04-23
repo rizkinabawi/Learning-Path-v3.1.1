@@ -279,6 +279,10 @@ function RootLayoutNav() {
         name="search"
         options={{ headerShown: false, animation: "slide_from_bottom" }}
       />
+      <Stack.Screen
+        name="anki-import"
+        options={{ headerShown: true, title: "Import Anki Deck", animation: "slide_from_right" }}
+      />
     </Stack>
   );
 }

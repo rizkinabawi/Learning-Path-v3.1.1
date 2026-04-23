@@ -381,6 +381,14 @@ export default function Dashboard() {
                 bg: "#EDE9FE",
                 route: "/bookmarks",
               },
+              {
+                icon: "download" as const,
+                label: "Import Anki",
+                sub: "Baca .apkg / .txt",
+                color: "#0EA5E9",
+                bg: "#E0F2FE",
+                route: "/anki-import",
+              },
             ].map((q, i) => (
               <TouchableOpacity
                 key={i}

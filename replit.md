@@ -5,9 +5,15 @@ Aplikasi belajar mobile (Expo React Native) — cloned dari https://github.com/r
 ## Architecture
 
 ### Artifacts
-- **`artifacts/mobile`** — Expo SDK 54 app (primary app), preview path: `/`
-- **`artifacts/api-server`** — Express API server (placeholder), preview path: `/api`
+- **`artifacts/mobile`** — Expo SDK 54 app (native build via Expo Go QR), preview path: `/`
+- **`artifacts/web`** — Web build of the same Expo app (via `expo export --platform web`), preview path: `/web/`. Shares 100% of source with mobile.
+- **`artifacts/api-server`** — Express API server (Anki .apkg parser), preview path: `/api`
 - **`artifacts/mockup-sandbox`** — Vite design sandbox, preview path: `/__mockup`
+
+### Mobile + Web Shared Codebase
+The web artifact does NOT have its own source code. Its `package.json` simply runs `expo start --web` (dev) and `expo export --platform web` (build) from `artifacts/mobile/`. To make modules web-safe:
+- Use `Component.web.tsx` shadow files for native-only modules (e.g. `AdBanner.web.tsx` returns `null` because `react-native-google-mobile-ads` is native-only).
+- Always check `Platform.OS === "web"` before using native APIs.
 
 ### Stack
 - **Monorepo tool**: pnpm workspaces
