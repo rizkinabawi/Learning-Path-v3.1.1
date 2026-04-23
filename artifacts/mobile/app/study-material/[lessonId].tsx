@@ -25,6 +25,7 @@ import {
   PencilLine,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   FileText,
   Code2,
   Paperclip,
@@ -263,15 +264,77 @@ const TYPE_INFO: Record<TabType, { icon: React.ReactNode; label: string; color: 
   },
 };
 
+function ExtraImagesEditor({
+  images,
+  onAdd,
+  onRemove,
+}: {
+  images: string[];
+  onAdd: () => void;
+  onRemove: (i: number) => void;
+}) {
+  return (
+    <View style={{ marginTop: 12, gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={[styles.fieldLabel, { flex: 1 }]}>
+          Lampiran Gambar {images.length > 0 ? `(${images.length})` : ""}
+        </Text>
+        <TouchableOpacity
+          onPress={onAdd}
+          style={{
+            flexDirection: "row", alignItems: "center", gap: 4,
+            backgroundColor: Colors.successLight, borderRadius: 8,
+            paddingHorizontal: 10, paddingVertical: 6,
+          }}
+        >
+          <Plus size={12} color={Colors.success} />
+          <Text style={{ fontSize: 11, fontWeight: "800", color: Colors.success }}>
+            Tambah
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {images.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8 }}
+        >
+          {images.map((uri, i) => (
+            <View key={`${uri}-${i}`} style={{ position: "relative" }}>
+              <Image
+                source={{ uri }}
+                style={{ width: 84, height: 84, borderRadius: 10, backgroundColor: "#eee" }}
+              />
+              <TouchableOpacity
+                onPress={() => onRemove(i)}
+                style={{
+                  position: "absolute", top: -6, right: -6,
+                  width: 22, height: 22, borderRadius: 11,
+                  backgroundColor: Colors.danger,
+                  alignItems: "center", justifyContent: "center",
+                }}
+              >
+                <X size={12} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
 export default function StudyMaterialScreen() {
-  const { lessonId } = useLocalSearchParams<{ lessonId: string }>();
+  const { lessonId, openEditId } = useLocalSearchParams<{
+    lessonId: string;
+    openEditId?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const { t } = useTranslation();
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
   const [lessonName, setLessonName] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("text");
   const [editMat, setEditMat] = useState<StudyMaterial | null>(null);
@@ -283,6 +346,8 @@ export default function StudyMaterialScreen() {
     name: string; uri: string; size?: number; mimeType?: string;
   } | null>(null);
   const [pickedImage, setPickedImage] = useState<string | null>(null);
+  /** Extra images attached to the material (canvas-style) */
+  const [extraImages, setExtraImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const safeLesson = Array.isArray(lessonId) ? lessonId[0] : (lessonId ?? "");
@@ -307,6 +372,7 @@ export default function StudyMaterialScreen() {
     setMatContent("");
     setPickedFile(null);
     setPickedImage(null);
+    setExtraImages([]);
     setActiveTab("text");
     setShowModal(true);
   };
@@ -325,8 +391,48 @@ export default function StudyMaterialScreen() {
     setPickedImage(
       mat.type === "image" && mat.filePath ? mat.filePath : null
     );
+    setExtraImages(mat.images ? [...mat.images] : []);
     setActiveTab(mat.type as any);
     setShowModal(true);
+  };
+
+  // Auto-open edit modal when arriving via fullview's "Edit" button
+  useEffect(() => {
+    const id = Array.isArray(openEditId) ? openEditId[0] : openEditId;
+    if (!id || materials.length === 0) return;
+    const mat = materials.find((m) => m.id === id);
+    if (mat) {
+      openEdit(mat);
+      // clear param so it doesn't reopen on rerender
+      router.setParams({ openEditId: "" });
+    }
+  }, [openEditId, materials]);
+
+  const openFullView = (mat: StudyMaterial) => {
+    router.push({
+      pathname: "/study-material/view/[matId]",
+      params: { matId: mat.id, lessonId: mat.lessonId },
+    });
+  };
+
+  const addAttachmentImage = async () => {
+    if (Platform.OS !== "web") {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") { Alert.alert("Izin", "Izinkan akses galeri."); return; }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: 8,
+    });
+    if (!result.canceled && result.assets?.length) {
+      setExtraImages((prev) => [...prev, ...result.assets.map((a) => a.uri)]);
+    }
+  };
+
+  const removeAttachmentImage = (i: number) => {
+    setExtraImages((prev) => prev.filter((_, idx) => idx !== i));
   };
 
   const pickMaterialImage = async () => {
@@ -420,6 +526,31 @@ export default function StudyMaterialScreen() {
         fileMime = "image/*";
       }
 
+      // Persist extra-image attachments (copy local files when on native)
+      let savedExtraImages: string[] = [];
+      if (extraImages.length > 0) {
+        if (Platform.OS !== "web") {
+          await ensureDir();
+          for (const uri of extraImages) {
+            try {
+              // already-persisted (inside our dir) → reuse
+              if (uri.startsWith(MATERIAL_DIR)) {
+                savedExtraImages.push(uri);
+                continue;
+              }
+              const ext = uri.split(".").pop()?.split("?")[0] ?? "jpg";
+              const dest = MATERIAL_DIR + `${generateId()}.${ext}`;
+              await FileSystem.copyAsync({ from: uri, to: dest });
+              savedExtraImages.push(dest);
+            } catch {
+              savedExtraImages.push(uri);
+            }
+          }
+        } else {
+          savedExtraImages = [...extraImages];
+        }
+      }
+
       const mat: StudyMaterial = {
         id: editMat?.id ?? generateId(),
         lessonId: safeId,
@@ -430,11 +561,13 @@ export default function StudyMaterialScreen() {
         fileName,
         fileSize,
         fileMime,
+        images: savedExtraImages.length > 0 ? savedExtraImages : undefined,
         createdAt: editMat?.createdAt ?? new Date().toISOString(),
       };
       await saveStudyMaterial(mat);
       setShowModal(false);
       setPickedImage(null);
+      setExtraImages([]);
       toast.success(t.material.saved);
       loadData();
     } catch (e: any) {
@@ -556,15 +689,13 @@ export default function StudyMaterialScreen() {
           </TouchableOpacity>
         ) : (
           materials.map((mat) => {
-            const isOpen = !!expanded[mat.id];
             const info = TYPE_INFO[mat.type];
+            const hasAttachments = mat.images && mat.images.length > 0;
             return (
               <View key={mat.id} style={styles.matCard}>
                 <TouchableOpacity
                   style={styles.matHeader}
-                  onPress={() =>
-                    setExpanded((p) => ({ ...p, [mat.id]: !p[mat.id] }))
-                  }
+                  onPress={() => openFullView(mat)}
                   activeOpacity={0.75}
                 >
                   <View style={[styles.typeTag, { backgroundColor: info.bg }]}>
@@ -600,16 +731,20 @@ export default function StudyMaterialScreen() {
                     >
                       <Trash2 size={13} color={Colors.danger} />
                     </TouchableOpacity>
-                    {isOpen ? (
-                      <ChevronUp size={16} color={Colors.textMuted} />
-                    ) : (
-                      <ChevronDown size={16} color={Colors.textMuted} />
+                    {hasAttachments && (
+                      <View style={styles.attachBadge}>
+                        <FileImage size={11} color={Colors.success} />
+                        <Text style={styles.attachBadgeText}>
+                          {mat.images!.length}
+                        </Text>
+                      </View>
                     )}
+                    <ChevronRight size={16} color={Colors.textMuted} />
                   </View>
                 </TouchableOpacity>
 
-                {isOpen && (
-                  <View style={styles.matBody}>
+                {false && (
+                  <View style={styles.matBody as any}>
                     {mat.type === "text" && (
                       <ScrollView
                         style={styles.textScroll}
@@ -776,6 +911,11 @@ export default function StudyMaterialScreen() {
                     placeholderTextColor={Colors.textMuted}
                     multiline
                     textAlignVertical="top"
+                  />
+                  <ExtraImagesEditor
+                    images={extraImages}
+                    onAdd={addAttachmentImage}
+                    onRemove={removeAttachmentImage}
                   />
                 </>
               )}
@@ -1104,4 +1244,11 @@ const styles = StyleSheet.create({
   },
   removeImageText: { fontSize: 12, color: Colors.danger, fontWeight: "700" },
 
+  // Attachment badge on list card
+  attachBadge: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: Colors.successLight, borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 3, marginRight: 2,
+  },
+  attachBadgeText: { fontSize: 10, fontWeight: "800", color: Colors.success },
 });

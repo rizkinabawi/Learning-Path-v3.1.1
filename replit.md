@@ -58,6 +58,9 @@ The web artifact does NOT have its own source code. Its `package.json` simply ru
 19. **Pack Manager** — kelola pack flashcard
 20. **Image Manager** — kelola gambar
 21. **Import Roadmap** — import learning roadmap
+22. **Anki Import** — `app/anki-import.tsx` parsing `.apkg`/`.colpkg` (server-side via `/api/anki/parse`) atau `.txt/.tsv/.csv` (client-side); jadi StandaloneCollection + Flashcards
+23. **Material/Note Fullview** — tap kartu pada lesson buka `app/study-material/view/[matId].tsx` & `app/notes/view/[noteId].tsx` dengan navigasi prev/next antar item dalam lesson yang sama; tombol "Edit" kembali ke list dengan param `openEditId` untuk auto-open editor
+24. **Canvas-style Image Attachments** — field opsional `images?: string[]` di `Note` & `StudyMaterial`; editor menyediakan ImagePicker multi-select; gambar di-copy ke `documentDirectory/notes/` & `documentDirectory/study-materials/`; ditampilkan di fullview dengan tap-to-zoom modal
 
 ## File Structure (Mobile)
 ```

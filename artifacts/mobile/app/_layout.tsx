@@ -283,6 +283,14 @@ function RootLayoutNav() {
         name="anki-import"
         options={{ headerShown: true, title: "Import Anki Deck", animation: "slide_from_right" }}
       />
+      <Stack.Screen
+        name="study-material/view/[matId]"
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
+      <Stack.Screen
+        name="notes/view/[noteId]"
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
     </Stack>
   );
 }

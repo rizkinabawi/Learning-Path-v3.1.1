@@ -9,6 +9,8 @@ import {
   Platform,
   Modal,
   Animated,
+  ScrollView,
+  Image,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,12 +19,14 @@ import {
   X,
   Plus,
   Trash2,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   PenLine,
   FileText,
   Clock,
+  FileImage,
 } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "@/utils/fs-compat";
 import {
   getNotes,
   saveNote,
@@ -35,24 +39,77 @@ import Colors from "@/constants/colors";
 import { toast } from "@/components/Toast";
 import { useTranslation } from "@/contexts/LanguageContext";
 
+const NOTES_DIR = ((FileSystem as any).documentDirectory ?? "") + "notes/";
+const ensureNotesDir = async () => {
+  if (Platform.OS === "web") return;
+  const info = await FileSystem.getInfoAsync(NOTES_DIR);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(NOTES_DIR, { intermediates: true });
+  }
+};
+
 export default function NotesScreen() {
-  const { lessonId } = useLocalSearchParams<{ lessonId: string }>();
+  const { lessonId, openEditId } = useLocalSearchParams<{
+    lessonId: string;
+    openEditId?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const { t } = useTranslation();
   const [notes, setNotes] = useState<Note[]>([]);
   const [lessonName, setLessonName] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showModal, setShowModal] = useState(false);
   const [editNote, setEditNote] = useState<Note | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadData();
   }, [lessonId]);
+
+  // Auto-open edit when arriving from fullview
+  useEffect(() => {
+    const id = Array.isArray(openEditId) ? openEditId[0] : openEditId;
+    if (!id || notes.length === 0) return;
+    const n = notes.find((x) => x.id === id);
+    if (n) {
+      openEdit(n);
+      router.setParams({ openEditId: "" });
+    }
+  }, [openEditId, notes]);
+
+  const openFullView = (note: Note) => {
+    router.push({
+      pathname: "/notes/view/[noteId]",
+      params: { noteId: note.id, lessonId: note.lessonId },
+    });
+  };
+
+  const addImage = async () => {
+    if (Platform.OS !== "web") {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Izin", "Izinkan akses galeri.");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: 8,
+    });
+    if (!result.canceled && result.assets?.length) {
+      setImages((prev) => [...prev, ...result.assets.map((a) => a.uri)]);
+    }
+  };
+
+  const removeImage = (i: number) => {
+    setImages((prev) => prev.filter((_, idx) => idx !== i));
+  };
 
   const loadData = async () => {
     const data = await getNotes(lessonId);
@@ -66,6 +123,7 @@ export default function NotesScreen() {
     setEditNote(null);
     setTitle("");
     setContent("");
+    setImages([]);
     setShowModal(true);
   };
 
@@ -73,6 +131,7 @@ export default function NotesScreen() {
     setEditNote(note);
     setTitle(note.title);
     setContent(note.content);
+    setImages(note.images ? [...note.images] : []);
     setShowModal(true);
   };
 
@@ -82,12 +141,36 @@ export default function NotesScreen() {
       return;
     }
     setSaving(true);
+    // Persist images locally on native
+    let savedImages: string[] = [];
+    if (images.length > 0) {
+      if (Platform.OS !== "web") {
+        await ensureNotesDir();
+        for (const uri of images) {
+          try {
+            if (uri.startsWith(NOTES_DIR)) {
+              savedImages.push(uri);
+              continue;
+            }
+            const ext = uri.split(".").pop()?.split("?")[0] ?? "jpg";
+            const dest = NOTES_DIR + `${generateId()}.${ext}`;
+            await FileSystem.copyAsync({ from: uri, to: dest });
+            savedImages.push(dest);
+          } catch {
+            savedImages.push(uri);
+          }
+        }
+      } else {
+        savedImages = [...images];
+      }
+    }
     const now = new Date().toISOString();
     const note: Note = {
       id: editNote?.id ?? generateId(),
       lessonId: lessonId ?? "",
       title: title.trim(),
       content: content.trim(),
+      images: savedImages.length > 0 ? savedImages : undefined,
       createdAt: editNote?.createdAt ?? now,
       updatedAt: now,
     };
@@ -111,10 +194,6 @@ export default function NotesScreen() {
         },
       },
     ]);
-  };
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const formatDate = (iso: string) => {
@@ -161,12 +240,12 @@ export default function NotesScreen() {
           </TouchableOpacity>
         ) : (
           notes.map((note) => {
-            const isOpen = !!expanded[note.id];
+            const hasImages = note.images && note.images.length > 0;
             return (
               <View key={note.id} style={styles.noteCard}>
                 <TouchableOpacity
                   style={styles.noteHeader}
-                  onPress={() => toggleExpand(note.id)}
+                  onPress={() => openFullView(note)}
                   activeOpacity={0.75}
                 >
                   <View style={styles.noteIconWrap}>
@@ -194,25 +273,17 @@ export default function NotesScreen() {
                     >
                       <Trash2 size={14} color={Colors.danger} />
                     </TouchableOpacity>
-                    {isOpen ? (
-                      <ChevronUp size={16} color={Colors.textMuted} />
-                    ) : (
-                      <ChevronDown size={16} color={Colors.textMuted} />
+                    {hasImages && (
+                      <View style={styles.attachBadge}>
+                        <FileImage size={11} color={Colors.success} />
+                        <Text style={styles.attachBadgeText}>
+                          {note.images!.length}
+                        </Text>
+                      </View>
                     )}
+                    <ChevronRight size={16} color={Colors.textMuted} />
                   </View>
                 </TouchableOpacity>
-
-                {isOpen && (
-                  <View style={styles.noteBody}>
-                    {note.content ? (
-                      <Text style={styles.noteContent}>{note.content}</Text>
-                    ) : (
-                      <Text style={styles.noteContentEmpty}>
-                        (tidak ada isi catatan)
-                      </Text>
-                    )}
-                  </View>
-                )}
               </View>
             );
           })
@@ -253,6 +324,54 @@ export default function NotesScreen() {
               multiline
               textAlignVertical="top"
             />
+
+            <View style={{ marginTop: 12, gap: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={[styles.fieldLabel, { flex: 1 }]}>
+                  Lampiran Gambar {images.length > 0 ? `(${images.length})` : ""}
+                </Text>
+                <TouchableOpacity
+                  onPress={addImage}
+                  style={{
+                    flexDirection: "row", alignItems: "center", gap: 4,
+                    backgroundColor: Colors.successLight, borderRadius: 8,
+                    paddingHorizontal: 10, paddingVertical: 6,
+                  }}
+                >
+                  <Plus size={12} color={Colors.success} />
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: Colors.success }}>
+                    Tambah
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {images.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {images.map((uri, i) => (
+                    <View key={`${uri}-${i}`} style={{ position: "relative" }}>
+                      <Image
+                        source={{ uri }}
+                        style={{ width: 84, height: 84, borderRadius: 10, backgroundColor: "#eee" }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => removeImage(i)}
+                        style={{
+                          position: "absolute", top: -6, right: -6,
+                          width: 22, height: 22, borderRadius: 11,
+                          backgroundColor: Colors.danger,
+                          alignItems: "center", justifyContent: "center",
+                        }}
+                      >
+                        <X size={12} color={Colors.white} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
 
             <View style={styles.modalBtns}>
               <TouchableOpacity
@@ -442,4 +561,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveBtnText: { fontSize: 14, fontWeight: "900", color: Colors.white },
+  attachBadge: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: Colors.successLight, borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 3, marginRight: 2,
+  },
+  attachBadgeText: { fontSize: 10, fontWeight: "800", color: Colors.success },
 });

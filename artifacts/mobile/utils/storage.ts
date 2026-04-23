@@ -122,6 +122,8 @@ export interface Note {
   lessonId: string;
   title: string;
   content: string;
+  /** Optional embedded images (URIs) — turns notes into a canvas-like editor */
+  images?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +140,8 @@ export interface StudyMaterial {
   fileMime?: string;
   videoUrl?: string;
   imageLocalPath?: string;
+  /** Optional extra images attached to text/html materials (canvas-style) */
+  images?: string[];
   createdAt: string;
 }
 
