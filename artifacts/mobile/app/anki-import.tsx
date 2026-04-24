@@ -21,23 +21,10 @@ import {
   saveFlashcard,
   saveStandaloneCollection,
 } from "@/utils/storage";
-
-interface ParsedDeck {
-  name: string;
-  cards: { front: string; back: string; tags?: string }[];
-}
+import { parseApkg, type ParsedDeck } from "@/utils/anki-parser";
 
 const generateId = () =>
   Date.now().toString() + Math.random().toString(36).substring(2, 9);
-
-function getApiBase(): string {
-  // On web (RN web served from same proxy), relative URL works.
-  // On native (Expo Go), use injected EXPO_PUBLIC_DOMAIN.
-  if (Platform.OS === "web") return "";
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  if (!domain) return "";
-  return `https://${domain.replace(/^https?:\/\//, "")}`;
-}
 
 function parseTxt(text: string): ParsedDeck {
   const lines = text.split(/\r?\n/);
@@ -94,34 +81,24 @@ export default function AnkiImportScreen() {
           setCollectionName(deck.name);
         }
       } else if (name.endsWith(".apkg") || name.endsWith(".colpkg")) {
-        // Upload to backend for parsing
-        const form = new FormData();
-        // React Native fetch FormData supports {uri, name, type} for files
-        // On web, we need the actual blob.
+        // 100% on-device parsing. No network/API call.
+        setStatus("Membaca file Anki di perangkat...");
+        let bytes: Uint8Array;
         if (Platform.OS === "web") {
           const resp = await fetch(asset.uri);
-          const blob = await resp.blob();
-          form.append("file", blob, asset.name ?? "deck.apkg");
+          const buf = await resp.arrayBuffer();
+          bytes = new Uint8Array(buf);
         } else {
-          form.append("file", {
-            // @ts-expect-error RN-specific FormData file shape
-            uri: asset.uri,
-            name: asset.name ?? "deck.apkg",
-            type: "application/zip",
+          const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.Base64,
           });
+          // base64 → Uint8Array (atob is available in Hermes)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bin = (globalThis as any).atob(b64) as string;
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         }
-        const res = await fetch(`${getApiBase()}/api/anki/parse`, {
-          method: "POST",
-          body: form,
-        });
-        if (!res.ok) {
-          const err = await res.text();
-          throw new Error(`Server: ${err}`);
-        }
-        const data = (await res.json()) as {
-          totalCards: number;
-          decks: ParsedDeck[];
-        };
+        const data = await parseApkg(bytes);
         if (!data.decks || data.decks.length === 0) {
           setStatus("Tidak ada kartu ditemukan dalam .apkg.");
         } else {
@@ -131,6 +108,7 @@ export default function AnkiImportScreen() {
               ? data.decks[0]!.name
               : `Anki Import (${data.totalCards} cards)`,
           );
+          setStatus("");
         }
       } else {
         setStatus("Format tidak dikenali. Gunakan .apkg, .colpkg, .txt, .tsv, atau .csv.");
